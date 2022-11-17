@@ -8,7 +8,7 @@ double voltage = 0;
 double current = 0;
 double energy = 0;
 
-struct ratio_t ratio = {1.0, 1.0, 1.0};
+struct ratio_t ratio = {1.08, 1.08, 1.16}; // ok, they were pretty similar on two first plugs, set them as a default
 
 // Serial data input buffer.
 unsigned char serialBuffer[24];
