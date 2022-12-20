@@ -26,7 +26,7 @@
 
 #include "cse7766.h"
 
-#define NAME "plug9"
+#define NAME "S31"
 #define VERSION 2.02
 
 static constexpr int STR_SIZE = 32;
@@ -37,8 +37,8 @@ static struct ip_config_t {
   uint32_t Signature;
 } ip_config;
 
-static const char *ssid = "L";
-static const char *password = "group224";
+static const char *ssid = "";
+static const char *password = "";
 static constexpr int ButtonChkPeriod_ms = 100;
 static constexpr int ButtonReset_s = 10;
 
