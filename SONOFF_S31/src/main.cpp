@@ -26,8 +26,8 @@
 
 #include "cse7766.h"
 
-#define NAME "plug5"
-#define VERSION 1.3
+#define NAME "plug9"
+#define VERSION 2.02
 
 static constexpr int STR_SIZE = 32;
 static constexpr uint32_t SIGNATURE = 102938475;
@@ -126,8 +126,10 @@ static void scan() {
 }  // scan
 
 static void Reconnect() {
-  if(WiFi.getMode() == WIFI_STA && WiFi.status() != WL_CONNECTED)
-      WiFi.begin(ip_config.ssid, ip_config.password);
+  if(WiFi.getMode() == WIFI_STA && WiFi.status() != WL_CONNECTED) {
+   WiFi.hostname(NAME);
+   WiFi.reconnect();
+  }
 } // Reconnect
 
 static void AP_mode_LED() {
@@ -184,11 +186,13 @@ void setup(void) {
 
   server.on("/", HTTP_GET, [&](AsyncWebServerRequest *request) {
     String ipStr = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
-    content = String("<!DOCTYPE HTML>\r\n<html>Hello from <b>") + NAME + "</b> at ";
-    content += ipStr + ", Version: " + VERSION;
+    content = String("<!DOCTYPE HTML>\r\n<html>Hello from <b>") + NAME + "</b> at IP: ";
+    content += ipStr + ", MAC: " + WiFi.macAddress() + ", Version: " + VERSION;
     content += "<p>WiFi networks:</p>";
     content += "<p>";
     content += WiFi_Around;
+    content += String("<p>Commands: URL as <b>") + NAME + "./<i>Command</i></p>";
+    content += "<ul><li> on</ li><li> off</ li><li> read</b><i> - returns \"Voltage Current Power Energy RelayStatus\"</i></li></ul>";
     content += String("</p><form method='get' action='set'><label>SSID: </label><input name='ssid' length=") + (STR_SIZE - 1) +
                " value='" + ip_config.ssid + "'><input name='pass' length=" + (STR_SIZE - 1) +
                "><input type='submit'></form>";
