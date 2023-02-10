@@ -3,7 +3,27 @@
 		{
 			"name": "SONOFF_S31",
 			"path": "D:/Dropbox (Personal)/personal/GIT_REPS/PROJECTS/PRIVATE/ESP8266/PLUG/SONOFF_S31"
+		},
+		{
+			"name": "HELTEC LoRa",
+			"path": "../../HELTEC LoRa"
+		},
+		{
+			"name": "Amica NodeMCU",
+			"path": "D:/Dropbox (Personal)/personal/GIT_REPS/PROJECTS/PRIVATE/EVR_BALANCE/Amica NodeMCU"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"files.associations": {
+			"atomic": "cpp",
+			"array": "cpp",
+			"bitset": "cpp",
+			"string_view": "cpp",
+			"initializer_list": "cpp",
+			"regex": "cpp",
+			"utility": "cpp",
+			"ranges": "cpp",
+			"functional": "cpp"
+		}
+	}
 }
