@@ -1,18 +1,26 @@
 {
 	"folders": [
-		{
-			"name": "SONOFF_S31",
-			"path": "D:/Dropbox (Personal)/personal/GIT_REPS/PROJECTS/PRIVATE/ESP8266/PLUG/SONOFF_S31"
-		},
-		{
-			"name": "HELTEC LoRa",
-			"path": "../../HELTEC LoRa"
-		},
-		{
-			"name": "Amica NodeMCU",
-			"path": "D:/Dropbox (Personal)/personal/GIT_REPS/PROJECTS/PRIVATE/EVR_BALANCE/Amica NodeMCU"
-		}
-	],
+    {
+      "name": "Amica NodeMCU",
+      "path": "D:/Dropbox (Personal)/personal/GIT_REPS/PROJECTS/PRIVATE/EVR_BALANCE/Amica NodeMCU"
+    },
+    {
+      "name": "esp32_evr",
+      "path": "D:/Dropbox (Personal)/personal/GIT_REPS/PROJECTS/PRIVATE/EVR_BALANCE/esp32_evr"
+    },
+    {
+      "name": "UltraSonicDM",
+      "path": "../../../UltraSonicDM"
+    },
+    {
+      "name": "WWVB",
+      "path": "../../../WWVB"
+    },
+    {
+      "name": "EPS32_Camera",
+      "path": "../../../EPS32_Camera"
+    }
+  ],
 	"settings": {
 		"files.associations": {
 			"atomic": "cpp",
@@ -24,6 +32,7 @@
 			"utility": "cpp",
 			"ranges": "cpp",
 			"functional": "cpp"
-		}
+		},
+		"stm32-for-vscode.makePath": false
 	}
 }
