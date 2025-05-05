@@ -1,0 +1,6 @@
+[submodule "SONOFF_S31/src/C_ESP"]
+	path = SONOFF_S31/src/C_ESP
+	url = https://github.com/avpanasyuk/C_ESP.git
+[submodule "SONOFF_S31/src/C_General"]
+	path = SONOFF_S31/src/C_General
+	url = https://github.com/avpanasyuk/C_General.git

@@ -19,20 +19,30 @@
     {
       "name": "EPS32_Camera",
       "path": "../../../EPS32_Camera"
+    },
+    {
+      "name": "SoilMoisture",
+      "path": "../../../SoilMoisture"
+    },
+    {
+      "name": "IrrigationControl",
+      "path": "../../../IrrigationControl"
     }
   ],
 	"settings": {
 		"files.associations": {
-			"atomic": "cpp",
-			"array": "cpp",
-			"bitset": "cpp",
-			"string_view": "cpp",
-			"initializer_list": "cpp",
-			"regex": "cpp",
-			"utility": "cpp",
-			"ranges": "cpp",
-			"functional": "cpp"
-		},
+      "atomic": "cpp",
+      "array": "cpp",
+      "bitset": "cpp",
+      "string_view": "cpp",
+      "initializer_list": "cpp",
+      "regex": "cpp",
+      "utility": "cpp",
+      "ranges": "cpp",
+      "functional": "cpp",
+      "string": "cpp",
+      "*.tcc": "cpp"
+    },
 		"stm32-for-vscode.makePath": false
 	}
 }
