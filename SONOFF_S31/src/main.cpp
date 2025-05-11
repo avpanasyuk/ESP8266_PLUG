@@ -85,8 +85,8 @@ static void ButtonCheck() {
 } // ButtonCheck
 
 static void ToggleLED() {
-  digitalWrite(LED, 1);
-  digitalWrite(LED, 0);
+  static int State = 0;
+  digitalWrite(LED, State = 1 - State);
 } // TogglePin
 
 // static void ReadCse7766() {
