@@ -8,6 +8,8 @@
 #include "C_General/MyTime.hpp"
 #include <Arduino.h>
 #include <EEPROM.h>
+#include <Ticker.h> // it is no good to indicate status connection from loop(), as
+// everything happens before loop.
 
 // where to direct debug_ output
 static ESP_board_sync_server *a;
@@ -15,7 +17,7 @@ static ESP_board_sync_server *a;
 extern "C" {
   int debug_puts(const char *s) {
 #ifdef DEBUG
-    if (a != nullptr) a->AddToLog(s);
+    if(a != nullptr) a->AddToLog(s);
 #endif
     return 0;
   }
@@ -23,14 +25,14 @@ extern "C" {
 
 #include "cse7766.h"
 
-#define NAME "S31"
-#define VERSION 2.02
-
 static constexpr int STR_SIZE = 32;
 static constexpr uint32_t SIGNATURE = 102938475;
 
 static constexpr int ButtonChkPeriod_ms = 100;
 static constexpr int ButtonReset_s = 10;
+
+avp::Time_t BlinkPeriod_ms = 0;
+
 int relayState;
 bool SwitchReset = true; // Flag indicating that the hardware button has been released
 
@@ -43,7 +45,7 @@ const int LED = ESP8266_GPIO13;   // On/off indicator LED. Onboard LED is 13 on 
 const int SWITCH = ESP8266_GPIO0; // Pushbutton.
 
 static void CheckFor(const char *name, ESP8266WebServer &w, float *pvar) {
-  if (w.hasArg(name)) {
+  if(w.hasArg(name)) {
     *pvar *= w.arg(name).toFloat();
     w.send(200, "text/plain", String(name) + " is set to " + String(*pvar));
     EEPROM.put(0, ratio);
@@ -59,17 +61,16 @@ static void ButtonCheck() {
   bool SwitchState = (digitalRead(SWITCH));
   static int NumCyclesButtonIsPressed;
 
-  if (!SwitchState) {
-    if (++NumCyclesButtonIsPressed >= ButtonReset_s * 1000 / ButtonChkPeriod_ms) {
+  if(!SwitchState) {
+    if(++NumCyclesButtonIsPressed >= ButtonReset_s * 1000 / ButtonChkPeriod_ms) {
       // button was pressed long enough
       ESP.reset();
     }
-  } else
-    NumCyclesButtonIsPressed = 0;
+  } else NumCyclesButtonIsPressed = 0;
 
   // toggle the switch if there's a new button press
-  if (!SwitchState && SwitchReset == true) {
-    if (relayState == HIGH) {
+  if(!SwitchState && SwitchReset == true) {
+    if(relayState == HIGH) {
       digitalWrite(RELAY, relayState = LOW);
     } else {
       digitalWrite(RELAY, relayState = HIGH);
@@ -78,7 +79,7 @@ static void ButtonCheck() {
     // Flag that indicates the physical button hasn't been released
     SwitchReset = false;
     delay(50); // De-bounce interlude.
-  } else if (SwitchState) {
+  } else if(SwitchState) {
     // reset flag the physical button release
     SwitchReset = true;
   }
@@ -89,23 +90,49 @@ static void ToggleLED() {
   digitalWrite(LED, State = 1 - State);
 } // TogglePin
 
-// static void ReadCse7766() {
-//   static CSE7766 cse7766;
-//   static bool first = true;
-//   if (first) {
-//     cse7766.begin();
-//     first = false;
-//   }
-//   cse7766.read();
-//   voltage = cse7766.getVoltage() * ratio.V;
-//   current = cse7766.getCurrent() * ratio.C;
-//   power = cse7766.getPower() * ratio.P;
-//   energy += power / 3600.0; // kWh
-// } // ReadCse7766
+Ticker ticker;
 
 static void Reconnect() {
-  if(WiFi.status() != WL_CONNECTED) ESP.restart(); 
+  // if(relayState == LOW && WiFi.status() != WL_CONNECTED) ESP.restart();
+  if(!WiFi.isConnected()) a->reconnect();
 } // Reconnect
+
+// Interrupt handler (callback function), called every 100ms
+void ICACHE_RAM_ATTR timerCallback() {
+  switch(ESP_board_no_server::ConnStatus) {
+  case ESP_board_no_server::IDLE:
+    digitalWrite(LED, HIGH); // LED off
+    break;
+  case ESP_board_no_server::TRYING_TO_CONNECT:
+    BlinkPeriod_ms = 200;
+    break;
+  case ESP_board_no_server::AP_MODE:
+    BlinkPeriod_ms = 500;
+    break;
+  case ESP_board_no_server::CONNECTED:
+    BlinkPeriod_ms = 0;
+    digitalWrite(LED, LOW); // LED on
+    break;
+  } // switch (Stat)
+} // timerCallback
+
+static void StatInd(enum ESP_board_no_server::ConnectionStatus_t Stat) {
+  switch(Stat) {
+  case ESP_board_no_server::IDLE:
+    BlinkPeriod_ms = 0;
+    digitalWrite(LED, HIGH); // LED off
+  case ESP_board_no_server::TRYING_TO_CONNECT:
+    BlinkPeriod_ms = 200;
+    break;
+  case ESP_board_no_server::AP_MODE:
+    BlinkPeriod_ms = 500;
+    break;
+  case ESP_board_no_server::CONNECTED:
+    BlinkPeriod_ms = 0;
+    digitalWrite(LED, LOW); // LED on
+    break;
+  } // switch (Stat)
+} // StatInd
 
 void setup() {
   pinMode(LED, OUTPUT);
@@ -119,18 +146,20 @@ void setup() {
   Serial.flush();
   Serial.begin(4800);
 
+  ticker.attach_ms(100, timerCallback);
+
   EEPROM.begin(sizeof(ratio));
   delay(10); // Initialasing EEPROM
   struct ratio_t ratio_from_EEPROM;
   EEPROM.get(0, ratio_from_EEPROM); // read calibration values
-  if (ratio_from_EEPROM.C > 0.66 && ratio_from_EEPROM.C < 1.5 && ratio_from_EEPROM.V > 0.66 &&
-      ratio_from_EEPROM.V < 1.5 && ratio_from_EEPROM.P > 0.5 && ratio_from_EEPROM.P < 2.0) // values look correct
+  if(ratio_from_EEPROM.C > 0.66 && ratio_from_EEPROM.C < 1.5 && ratio_from_EEPROM.V > 0.66 &&
+     ratio_from_EEPROM.V < 1.5 && ratio_from_EEPROM.P > 0.5 && ratio_from_EEPROM.P < 2.0) // values look correct
     ratio = ratio_from_EEPROM;
 
   auto Opts = ESP_board_sync_server::Default();
 
-  Opts.Name = "plug2";
-  Opts.Version = "2.00";
+  Opts.Name = NAME; // NAME should be specified in platformio.ini, so it is in sync with upload_port in espota
+  Opts.Version = "3.10";
   Opts.AddUsage = String("<p>Commands: URL as <b>") + Opts.Name + "./<i>Command</i></p>";
   Opts.AddUsage +=
       F("<ul><li> on</ li><li> off</li>"
@@ -143,13 +172,13 @@ void setup() {
         "type='submit'></form>"
         "<form method='get' action='set'><label>Power: </label><input name='PowerFactor' length=5><input "
         "type='submit'></form>");
+  Opts.status_indication_func_ = StatInd;
+
   a = new ESP_board_sync_server(Opts);
 
   debug_puts("Logging here...");
 
   auto &w = a->server;
-
-  w.on("/log", HTTP_GET, [&]() { w.send(200, "text/html", a->GetLog()); });
 
   w.on("/on", HTTP_GET, [&]() {
     digitalWrite(RELAY, relayState = HIGH);
@@ -172,18 +201,16 @@ void setup() {
     w.send(200, "text/plain", String(voltage) + " " + current + " " + power + " " + energy + " " + relayState + "\n");
   });
 
-  w.begin(); // Start the server
-
   // Switch LED on to signal initialization complete.
   digitalWrite(LED, LOW);
 } // setup
 
 void loop() {
   // put your main code here, to run repeatedly:
-  avp::Periodically<ToggleLED>::Run(500);
+  avp::Periodically<ToggleLED>::Run(BlinkPeriod_ms);
   avp::Periodically<ButtonCheck>::Run(ButtonChkPeriod_ms);
   avp::Periodically<ReadCse7766>::Run(1000);
-  avp::Periodically<Reconnect>::Run(5000);
-  avp::Periodically<ToggleLED>::Run(500);
+  avp::Periodically<Reconnect>::Run(5UL * 60 * 1000); // 5 minutes to give time to reconnect in AP mode
   a->loop();
+  yield();
 } // loop
