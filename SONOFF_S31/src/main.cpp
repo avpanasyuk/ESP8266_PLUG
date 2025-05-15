@@ -8,8 +8,6 @@
 #include "C_General/MyTime.hpp"
 #include <Arduino.h>
 #include <EEPROM.h>
-#include <Ticker.h> // it is no good to indicate status connection from loop(), as
-// everything happens before loop.
 
 // where to direct debug_ output
 static ESP_board_sync_server *a;
@@ -25,24 +23,19 @@ extern "C" {
 
 #include "cse7766.h"
 
-static constexpr int STR_SIZE = 32;
-static constexpr uint32_t SIGNATURE = 102938475;
-
 static constexpr int ButtonChkPeriod_ms = 100;
 static constexpr int ButtonReset_s = 10;
-
-avp::Time_t BlinkPeriod_ms = 0;
 
 int relayState;
 bool SwitchReset = true; // Flag indicating that the hardware button has been released
 
 // esp8266 pins.
-#define ESP8266_GPIO13 13         // Sonof green LED (LOW == ON).
-#define ESP8266_GPIO0 0           // Sonoff pushbutton (LOW == pressed).
-#define ESP8266_GPIO12 12         // Sonoff relay (HIGH == ON).
-const int RELAY = ESP8266_GPIO12; // Relay switching pin. Relay is pin 12 on the SonOff
-const int LED = ESP8266_GPIO13;   // On/off indicator LED. Onboard LED is 13 on Sonoff
-const int SWITCH = ESP8266_GPIO0; // Pushbutton.
+#define ESP8266_GPIO13 13                  // Sonof green LED (LOW == ON).
+#define ESP8266_GPIO0 0                    // Sonoff pushbutton (LOW == pressed).
+#define ESP8266_GPIO12 12                  // Sonoff relay (HIGH == ON).
+const int RELAY = ESP8266_GPIO12;          // Relay switching pin. Relay is pin 12 on the SonOff
+static constexpr int LED = ESP8266_GPIO13; // On/off indicator LED. Onboard LED is 13 on Sonoff
+const int SWITCH = ESP8266_GPIO0;          // Pushbutton.
 
 static void CheckFor(const char *name, ESP8266WebServer &w, float *pvar) {
   if(w.hasArg(name)) {
@@ -85,54 +78,10 @@ static void ButtonCheck() {
   }
 } // ButtonCheck
 
-static void ToggleLED() {
-  static int State = 0;
-  digitalWrite(LED, State = 1 - State);
-} // TogglePin
-
-Ticker ticker;
-
 static void Reconnect() {
   // if(relayState == LOW && WiFi.status() != WL_CONNECTED) ESP.restart();
   if(!WiFi.isConnected()) a->reconnect();
 } // Reconnect
-
-// Interrupt handler (callback function), called every 100ms
-void ICACHE_RAM_ATTR timerCallback() {
-  switch(ESP_board_no_server::ConnStatus) {
-  case ESP_board_no_server::IDLE:
-    digitalWrite(LED, HIGH); // LED off
-    break;
-  case ESP_board_no_server::TRYING_TO_CONNECT:
-    BlinkPeriod_ms = 200;
-    break;
-  case ESP_board_no_server::AP_MODE:
-    BlinkPeriod_ms = 500;
-    break;
-  case ESP_board_no_server::CONNECTED:
-    BlinkPeriod_ms = 0;
-    digitalWrite(LED, LOW); // LED on
-    break;
-  } // switch (Stat)
-} // timerCallback
-
-static void StatInd(enum ESP_board_no_server::ConnectionStatus_t Stat) {
-  switch(Stat) {
-  case ESP_board_no_server::IDLE:
-    BlinkPeriod_ms = 0;
-    digitalWrite(LED, HIGH); // LED off
-  case ESP_board_no_server::TRYING_TO_CONNECT:
-    BlinkPeriod_ms = 200;
-    break;
-  case ESP_board_no_server::AP_MODE:
-    BlinkPeriod_ms = 500;
-    break;
-  case ESP_board_no_server::CONNECTED:
-    BlinkPeriod_ms = 0;
-    digitalWrite(LED, LOW); // LED on
-    break;
-  } // switch (Stat)
-} // StatInd
 
 void setup() {
   pinMode(LED, OUTPUT);
@@ -146,8 +95,6 @@ void setup() {
   Serial.flush();
   Serial.begin(4800);
 
-  ticker.attach_ms(100, timerCallback);
-
   EEPROM.begin(sizeof(ratio));
   delay(10); // Initialasing EEPROM
   struct ratio_t ratio_from_EEPROM;
@@ -159,20 +106,19 @@ void setup() {
   auto Opts = ESP_board_sync_server::Default();
 
   Opts.Name = NAME; // NAME should be specified in platformio.ini, so it is in sync with upload_port in espota
-  Opts.Version = "3.10";
-  Opts.AddUsage = String("<p>Commands: URL as <b>") + Opts.Name + "./<i>Command</i></p>";
-  Opts.AddUsage +=
-      F("<ul><li> on</ li><li> off</li>"
-        "<li> read</b><i> - returns \"Voltage Current Power Energy "
-        "RelayStatus\"</i></li></ul>"
-        "Correction multipliers: <br>"
+  Opts.Version = "3.15";
+  Opts.AddUsage =
+      F("<li> on</ li><li> off</li>"
+        "<li> read - returns <em>\"Voltage Current Power Energy "
+        "RelayStatus\"</em></li>"
+        "<li><b>Correction multipliers: </b></li>"
         "<form method='get' action='set'><label>Current: </label><input name='CurrentFactor' length=5><input "
         "type='submit'></form>"
         "<form method='get' action='set'><label>Voltage: </label><input name='VoltageFactor' length=5><input "
         "type='submit'></form>"
         "<form method='get' action='set'><label>Power: </label><input name='PowerFactor' length=5><input "
         "type='submit'></form>");
-  Opts.status_indication_func_ = StatInd;
+  Opts.status_indication_func_ = ESP_board_sync_server::BlinkerFunc<LED>;
 
   a = new ESP_board_sync_server(Opts);
 
@@ -207,7 +153,6 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  avp::Periodically<ToggleLED>::Run(BlinkPeriod_ms);
   avp::Periodically<ButtonCheck>::Run(ButtonChkPeriod_ms);
   avp::Periodically<ReadCse7766>::Run(1000);
   avp::Periodically<Reconnect>::Run(5UL * 60 * 1000); // 5 minutes to give time to reconnect in AP mode
