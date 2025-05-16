@@ -12,10 +12,16 @@
 // where to direct debug_ output
 static ESP_board_sync_server *a;
 
+#define DEBUG_SERIAL Serial1
+
 extern "C" {
   int debug_puts(const char *s) {
 #ifdef DEBUG
     if(a != nullptr) a->AddToLog(s);
+    if(DEBUG_SERIAL) {
+      DEBUG_SERIAL.print(s);
+      DEBUG_SERIAL.flush();
+    }
 #endif
     return 0;
   }
@@ -106,12 +112,12 @@ void setup() {
   auto Opts = ESP_board_sync_server::Default();
 
   Opts.Name = NAME; // NAME should be specified in platformio.ini, so it is in sync with upload_port in espota
-  Opts.Version = "3.15";
+  Opts.Version = "4.02";
   Opts.AddUsage =
       F("<li> on</ li><li> off</li>"
         "<li> read - returns <em>\"Voltage Current Power Energy "
         "RelayStatus\"</em></li>"
-        "<li><b>Correction multipliers: </b></li>"
+        "<b>Correction multipliers: </b><br>"
         "<form method='get' action='set'><label>Current: </label><input name='CurrentFactor' length=5><input "
         "type='submit'></form>"
         "<form method='get' action='set'><label>Voltage: </label><input name='VoltageFactor' length=5><input "
