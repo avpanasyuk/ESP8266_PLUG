@@ -4,3 +4,6 @@
 [submodule "SONOFF_S31/src/C_General"]
 	path = SONOFF_S31/src/C_General
 	url = https://github.com/avpanasyuk/C_General.git
+[submodule "SONOFF_S31/src/C_ARDUINO"]
+	path = SONOFF_S31/src/C_ARDUINO
+	url = https://github.com/avpanasyuk/C_ARDUINO.git

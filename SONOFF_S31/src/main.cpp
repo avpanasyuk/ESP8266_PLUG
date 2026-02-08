@@ -4,20 +4,21 @@
  * LED blinks fast (half a sec) when trying to connect as station, slow when sets up AP,
  * solid when connected
  */
-#include "C_ESP/board_sync_server.h"
+#include <ESP8266WiFi.h>
+#include <ArduinoOTA.h>
 #include "C_General/MyTime.hpp"
+#include "C_ESP/StaticWebServer.hpp"
 #include <Arduino.h>
 #include <EEPROM.h>
 
-// where to direct debug_ output
-static ESP_board_sync_server *a;
+static auto &w = avp::StaticWebServer::s; // just an alias to make code shorter
 
 #define DEBUG_SERIAL Serial1
 
 extern "C" {
   int debug_puts(const char *s) {
-#ifdef DEBUG
-    if(a != nullptr) a->AddToLog(s);
+#ifndef NDEBUG
+    avp::Log::Add(s);
     if(DEBUG_SERIAL) {
       DEBUG_SERIAL.print(s);
       DEBUG_SERIAL.flush();
@@ -84,11 +85,6 @@ static void ButtonCheck() {
   }
 } // ButtonCheck
 
-static void Reconnect() {
-  // if(relayState == LOW && WiFi.status() != WL_CONNECTED) ESP.restart();
-  if(!WiFi.isConnected()) a->reconnect();
-} // Reconnect
-
 void setup() {
   pinMode(LED, OUTPUT);
   pinMode(SWITCH, INPUT_PULLUP);
@@ -109,10 +105,10 @@ void setup() {
      ratio_from_EEPROM.V < 1.5 && ratio_from_EEPROM.P > 0.5 && ratio_from_EEPROM.P < 2.0) // values look correct
     ratio = ratio_from_EEPROM;
 
-  auto Opts = ESP_board_sync_server::Default();
+  auto Opts = avp::StaticWebServer::DefaultOpts();
 
   Opts.Name = NAME; // NAME should be specified in platformio.ini, so it is in sync with upload_port in espota
-  Opts.Version = "4.02";
+  Opts.Version = "5.00";
   Opts.AddUsage =
       F("<li> on</ li><li> off</li>"
         "<li> read - returns <em>\"Voltage Current Power Energy "
@@ -124,13 +120,10 @@ void setup() {
         "type='submit'></form>"
         "<form method='get' action='set'><label>Power: </label><input name='PowerFactor' length=5><input "
         "type='submit'></form>");
-  Opts.status_indication_func_ = ESP_board_sync_server::BlinkerFunc<LED>;
+  Opts.status_indication_func_ = avp::StaticWiFi_Conn::Blinken;
 
-  a = new ESP_board_sync_server(Opts);
-
-  debug_puts("Logging here...");
-
-  auto &w = a->server;
+  avp::Log::begin();
+  debug_puts("debug_puts output here!\n");
 
   w.on("/on", HTTP_GET, [&]() {
     digitalWrite(RELAY, relayState = HIGH);
@@ -161,7 +154,6 @@ void loop() {
   // put your main code here, to run repeatedly:
   avp::Periodically<ButtonCheck>::Run(ButtonChkPeriod_ms);
   avp::Periodically<ReadCse7766>::Run(1000);
-  avp::Periodically<Reconnect>::Run(5UL * 60 * 1000); // 5 minutes to give time to reconnect in AP mode
-  a->loop();
+  avp::StaticWebServer::call_in_loop();
   yield();
 } // loop
