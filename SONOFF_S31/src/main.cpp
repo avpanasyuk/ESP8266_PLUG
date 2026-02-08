@@ -92,6 +92,8 @@ void setup() {
   // Switch relay off, LED on.
   digitalWrite(RELAY, relayState = LOW);
   pinMode(RELAY, OUTPUT);
+  digitalWrite(LED, HIGH);
+ 
 
   // Setup cse7766 serial.
   Serial.flush();
@@ -108,7 +110,7 @@ void setup() {
   auto Opts = avp::StaticWebServer::DefaultOpts();
 
   Opts.Name = NAME; // NAME should be specified in platformio.ini, so it is in sync with upload_port in espota
-  Opts.Version = "5.00";
+  Opts.Version = "5.03";
   Opts.AddUsage =
       F("<li> on</ li><li> off</li>"
         "<li> read - returns <em>\"Voltage Current Power Energy "
@@ -120,7 +122,9 @@ void setup() {
         "type='submit'></form>"
         "<form method='get' action='set'><label>Power: </label><input name='PowerFactor' length=5><input "
         "type='submit'></form>");
-  Opts.status_indication_func_ = avp::StaticWiFi_Conn::Blinken;
+  Opts.status_indication_func_ = avp::StaticWiFi_Conn::Blinken<LED>;
+
+  avp::StaticWebServer::begin(Opts);
 
   avp::Log::begin();
   debug_puts("debug_puts output here!\n");
