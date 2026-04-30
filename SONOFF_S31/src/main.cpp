@@ -4,6 +4,7 @@
  * LED blinks fast (half a sec) when trying to connect as station, slow when sets up AP,
  * solid when connected
  */
+
 #include <ESP8266WiFi.h>
 #include <ArduinoOTA.h>
 #include "C_General/MyTime.hpp"
@@ -18,7 +19,7 @@ static auto &w = avp::StaticWebServer::s; // just an alias to make code shorter
 extern "C" {
   int debug_puts(const char *s) {
 #ifndef NDEBUG
-    avp::Log::Add(s);
+    avp::HTML_Log::Add(s);
     if(DEBUG_SERIAL) {
       DEBUG_SERIAL.print(s);
       DEBUG_SERIAL.flush();
@@ -86,14 +87,20 @@ static void ButtonCheck() {
 } // ButtonCheck
 
 void setup() {
-  pinMode(LED, OUTPUT);
+  digitalWrite(LED, HIGH);
+  pinMode(LED, OUTPUT); // turn LED off
+  
   pinMode(SWITCH, INPUT_PULLUP);
   delay(10);
-  // Switch relay off, LED on.
+  
+  // Switch relay off.
   digitalWrite(RELAY, relayState = LOW);
   pinMode(RELAY, OUTPUT);
-  digitalWrite(LED, HIGH);
- 
+
+#ifdef DEBUG_SERIAL
+  DEBUG_SERIAL.begin(74880);
+#endif
+  Serial1.println("Serial1 output goes here");
 
   // Setup cse7766 serial.
   Serial.flush();
@@ -110,24 +117,30 @@ void setup() {
   auto Opts = avp::StaticWebServer::DefaultOpts();
 
   Opts.Name = NAME; // NAME should be specified in platformio.ini, so it is in sync with upload_port in espota
-  Opts.Version = "5.03";
+  Opts.Version = "5.12";
   Opts.AddUsage =
-      F("<li> on</ li><li> off</li>"
-        "<li> read - returns <em>\"Voltage Current Power Energy "
-        "RelayStatus\"</em></li>"
-        "<b>Correction multipliers: </b><br>"
-        "<form method='get' action='set'><label>Current: </label><input name='CurrentFactor' length=5><input "
-        "type='submit'></form>"
-        "<form method='get' action='set'><label>Voltage: </label><input name='VoltageFactor' length=5><input "
-        "type='submit'></form>"
-        "<form method='get' action='set'><label>Power: </label><input name='PowerFactor' length=5><input "
-        "type='submit'></form>");
+    F("<li> on</ li><li> off</li>"
+      "<li> read - returns <em>\"Voltage Current Power Energy "
+      "RelayStatus\"</em></li>"
+      "<b>Correction multipliers: </b><br>"
+      "<form method='get' action='set'><label>Current: </label><input name='CurrentFactor' length=5><input "
+      "type='submit'></form>"
+      "<form method='get' action='set'><label>Voltage: </label><input name='VoltageFactor' length=5><input "
+      "type='submit'></form>"
+      "<form method='get' action='set'><label>Power: </label><input name='PowerFactor' length=5><input "
+      "type='submit'></form>");
   Opts.status_indication_func_ = avp::StaticWiFi_Conn::Blinken<LED>;
 
   avp::StaticWebServer::begin(Opts);
+  
+  WiFi.setPhyMode(WIFI_PHY_MODE_11G);
+  WiFi.persistent(false);
 
-  avp::Log::begin();
+  avp::HTML_Log::begin();
   debug_puts("debug_puts output here!\n");
+  debug_printf("Sketch size:     %u\n", ESP.getSketchSize());
+  debug_printf("Free sketch space: %u\n", ESP.getFreeSketchSpace());
+  debug_printf("Flash chip size:   %u\n", ESP.getFlashChipRealSize());
 
   w.on("/on", HTTP_GET, [&]() {
     digitalWrite(RELAY, relayState = HIGH);
@@ -149,9 +162,6 @@ void setup() {
   w.on("/read", HTTP_GET, [&]() {
     w.send(200, "text/plain", String(voltage) + " " + current + " " + power + " " + energy + " " + relayState + "\n");
   });
-
-  // Switch LED on to signal initialization complete.
-  digitalWrite(LED, LOW);
 } // setup
 
 void loop() {
