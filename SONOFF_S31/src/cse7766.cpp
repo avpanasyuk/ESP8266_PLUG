@@ -129,7 +129,7 @@ void ReadCse7766() {
 
     // first byte must be 0x55 or 0xF?.
     if (index == 0) {
-      if ((input != 0x55) && (input < 0xF0))
+      if (input != 0x55 && input < 0xF0 && input != 0xAA)
         continue;
     }
     // second byte must be 0x5A.
@@ -142,10 +142,7 @@ void ReadCse7766() {
 
     serialBuffer[index++] = input;
 
-    if (index > 23) {
-      Serial.flush();
-      break;
-    }
+    if (index > 23) break;
   }
 
   // Process packet.

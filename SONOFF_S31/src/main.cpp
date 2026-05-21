@@ -1,6 +1,6 @@
 /**
  * @author Sasha
- * If you press button for more than 10 seconds WiFi configuration is erased.
+ * If you press button for more than 10 seconds MCU resets.
  * LED blinks fast (half a sec) when trying to connect as station, slow when sets up AP,
  * solid when connected
  */
@@ -64,6 +64,7 @@ static void ButtonCheck() {
 
   if(!SwitchState) {
     if(++NumCyclesButtonIsPressed >= ButtonReset_s * 1000 / ButtonChkPeriod_ms) {
+      WiFi.disconnect(true);
       // button was pressed long enough
       ESP.reset();
     }
@@ -79,7 +80,7 @@ static void ButtonCheck() {
 
     // Flag that indicates the physical button hasn't been released
     SwitchReset = false;
-    delay(50); // De-bounce interlude.
+    // delay(50); // De-bounce interlude. NO, ButtonChkPeriod_ms already debounces
   } else if(SwitchState) {
     // reset flag the physical button release
     SwitchReset = true;
@@ -89,10 +90,10 @@ static void ButtonCheck() {
 void setup() {
   digitalWrite(LED, HIGH);
   pinMode(LED, OUTPUT); // turn LED off
-  
+
   pinMode(SWITCH, INPUT_PULLUP);
   delay(10);
-  
+
   // Switch relay off.
   digitalWrite(RELAY, relayState = LOW);
   pinMode(RELAY, OUTPUT);
@@ -117,7 +118,7 @@ void setup() {
   auto Opts = avp::StaticWebServer::DefaultOpts();
 
   Opts.Name = NAME; // NAME should be specified in platformio.ini, so it is in sync with upload_port in espota
-  Opts.Version = "5.12";
+  Opts.Version = "6.10";
   Opts.AddUsage =
     F("<li> on</ li><li> off</li>"
       "<li> read - returns <em>\"Voltage Current Power Energy "
@@ -132,10 +133,9 @@ void setup() {
   Opts.status_indication_func_ = avp::StaticWiFi_Conn::Blinken<LED>;
 
   avp::StaticWebServer::begin(Opts);
-  
-  WiFi.setPhyMode(WIFI_PHY_MODE_11G);
-  WiFi.persistent(false);
 
+  // WiFi.setPhyMode(WIFI_PHY_MODE_11G); that's 802.11g mode, we do not do it
+  
   avp::HTML_Log::begin();
   debug_puts("debug_puts output here!\n");
   debug_printf("Sketch size:     %u\n", ESP.getSketchSize());
