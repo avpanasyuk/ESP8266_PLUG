@@ -14,7 +14,7 @@
 
 static auto &w = avp::StaticWebServer::s; // just an alias to make code shorter
 
-#define DEBUG_SERIAL Serial1
+#define DEBUG_SERIAL Serial
 
 extern "C" {
   int debug_puts(const char *s) {
@@ -101,11 +101,11 @@ void setup() {
 #ifdef DEBUG_SERIAL
   DEBUG_SERIAL.begin(74880);
 #endif
-  Serial1.println("Serial1 output goes here");
 
   // Setup cse7766 serial.
   Serial.flush();
-  Serial.begin(4800);
+  // Serial.begin(4800);
+  DEBUG_SERIAL.println("Here is the debug output!");
 
   EEPROM.begin(sizeof(ratio));
   delay(10); // Initialasing EEPROM
@@ -118,7 +118,7 @@ void setup() {
   auto Opts = avp::StaticWebServer::DefaultOpts();
 
   Opts.Name = NAME; // NAME should be specified in platformio.ini, so it is in sync with upload_port in espota
-  Opts.Version = "6.10";
+  Opts.Version = "6.20";
   Opts.AddUsage =
     F("<li> on</ li><li> off</li>"
       "<li> read - returns <em>\"Voltage Current Power Energy "
@@ -130,7 +130,8 @@ void setup() {
       "type='submit'></form>"
       "<form method='get' action='set'><label>Power: </label><input name='PowerFactor' length=5><input "
       "type='submit'></form>");
-  Opts.status_indication_func_ = avp::StaticWiFi_Conn::Blinken<LED>;
+  avp::StaticWiFi_Conn::LED_pin = LED;
+  Opts.status_indication_func_ = avp::StaticWiFi_Conn::Blinken;
 
   avp::StaticWebServer::begin(Opts);
 
