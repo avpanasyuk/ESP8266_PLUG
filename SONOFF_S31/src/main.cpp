@@ -118,10 +118,10 @@ void setup() {
   auto Opts = avp::StaticWebServer::DefaultOpts();
 
   Opts.Name = NAME; // NAME should be specified in platformio.ini, so it is in sync with upload_port in espota
-  Opts.Version = "6.20";
+  Opts.Version = "6.30";
   Opts.AddUsage =
-    F("<li> on</ li><li> off</li>"
-      "<li> read - returns <em>\"Voltage Current Power Energy "
+    F("<li> <a href='/on'>on</a></li><li> <a href='/off'>off</a></li>"
+      "<li> <a href='/read'>read</a> - returns <em>\"Voltage Current Power Energy "
       "RelayStatus\"</em></li>"
       "<b>Correction multipliers: </b><br>"
       "<form method='get' action='set'><label>Current: </label><input name='CurrentFactor' length=5><input "
