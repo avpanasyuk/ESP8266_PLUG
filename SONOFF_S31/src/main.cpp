@@ -14,16 +14,18 @@
 
 static auto &w = avp::StaticWebServer::s; // just an alias to make code shorter
 
-#define DEBUG_SERIAL Serial
+// #define DEBUG_SERIAL Serial // idiotic idea: UART0 is both connected to cse7766 and connected to
+// header, UART1 is not accessable. Reenable DEBUG_SERIAL is  you want debug output, but
+// it kills cse7766 communication
 
 extern "C" {
   int debug_puts(const char *s) {
 #ifndef NDEBUG
     avp::HTML_Log::Add(s);
-    if(DEBUG_SERIAL) {
+#ifdef DEBUG_SERIAL
       DEBUG_SERIAL.print(s);
       DEBUG_SERIAL.flush();
-    }
+#endif
 #endif
     return 0;
   }
@@ -100,12 +102,13 @@ void setup() {
 
 #ifdef DEBUG_SERIAL
   DEBUG_SERIAL.begin(74880);
-#endif
-
+  DEBUG_SERIAL.println("Here is the debug output!");
+#else
   // Setup cse7766 serial.
   Serial.flush();
-  // Serial.begin(4800);
-  DEBUG_SERIAL.println("Here is the debug output!");
+  Serial.begin(4800);
+#endif
+
 
   EEPROM.begin(sizeof(ratio));
   delay(10); // Initialasing EEPROM
