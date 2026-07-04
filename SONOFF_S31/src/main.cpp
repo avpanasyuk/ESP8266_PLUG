@@ -19,7 +19,7 @@
 #endif
 // Human deploy counter + GIT_REV; the single version source (bump on each upload).
 // Fleet OTA is MD5-gated, so this string is informational (logged by the server).
-static constexpr const char *Version = "6.31+" GIT_REV;
+static constexpr const char *Version = "6.32+" GIT_REV;
 
 static auto &w = avp::StaticWebServer::s; // just an alias to make code shorter
 
