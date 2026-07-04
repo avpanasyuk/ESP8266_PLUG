@@ -9,8 +9,17 @@
 #include <ArduinoOTA.h>
 #include "C_General/MyTime.hpp"
 #include "C_ESP/StaticWebServer.hpp"
+#include "C_ESP/service.h"          // avp::DeviceName
+#include "C_ESP/FleetServerOTA.hpp" // avp::PullUpdateFromFleetServer
 #include <Arduino.h>
 #include <EEPROM.h>
+
+#ifndef GIT_REV
+#define GIT_REV "nogit" // overridden by git_rev.py extra_script at build time
+#endif
+// Human deploy counter + GIT_REV; the single version source (bump on each upload).
+// Fleet OTA is MD5-gated, so this string is informational (logged by the server).
+static constexpr const char *Version = "6.31+" GIT_REV;
 
 static auto &w = avp::StaticWebServer::s; // just an alias to make code shorter
 
@@ -120,8 +129,12 @@ void setup() {
 
   auto Opts = avp::StaticWebServer::DefaultOpts();
 
-  Opts.Name = NAME; // NAME should be specified in platformio.ini, so it is in sync with upload_port in espota
-  Opts.Version = "6.30";
+  // Per-device identity "plug-XXYYZZ" (last 3 MAC bytes) so one common firmware
+  // serves the whole fleet: hostname / mDNS / softAP SSID / espota target are all
+  // unique per unit. NAME (=${common.netname}=\"plug\") is only the shared fleet
+  // prefix + the fleet-OTA base name (<NAME>.bin).
+  Opts.Name = avp::DeviceName(NAME);
+  Opts.Version = Version;
   Opts.AddUsage =
     F("<li> <a href='/on'>on</a></li><li> <a href='/off'>off</a></li>"
       "<li> <a href='/read'>read</a> - returns <em>\"Voltage Current Power Energy "
@@ -168,10 +181,22 @@ void setup() {
   });
 } // setup
 
+// Poll the fleet server for a new <NAME>.bin and flash it if the running image
+// differs (MD5-gated; a cheap 304 otherwise, so it is safe every cycle). A
+// successful update REBOOTS, and boot forces the relay LOW (see setup) -- so only
+// auto-update while the relay is already OFF. That way a fleet rollout never cuts
+// power to a live load, and a plug powering a normally-off reserve server updates
+// itself precisely in its safe window. To update a plug whose load is ON, turn it
+// off briefly or push via espota to plug-XXYYZZ.
+static void CheckFleetOTA() {
+  if(relayState == LOW) avp::PullUpdateFromFleetServer(NAME, Version);
+} // CheckFleetOTA
+
 void loop() {
   // put your main code here, to run repeatedly:
   avp::Periodically<ButtonCheck>::Run(ButtonChkPeriod_ms);
   avp::Periodically<ReadCse7766>::Run(1000);
+  avp::Periodically<CheckFleetOTA>::Run(60UL * 1000); // fleet pull-OTA, once a minute (relay-off only)
   avp::StaticWebServer::call_in_loop();
   yield();
 } // loop
