@@ -9,17 +9,21 @@
 #include <ArduinoOTA.h>
 #include "C_General/MyTime.hpp"
 #include "C_ESP/StaticWebServer.hpp"
-#include "C_ESP/service.h"          // avp::DeviceName
-#include "C_ESP/FleetServerOTA.hpp" // avp::PullUpdateFromFleetServer
+#include "C_ESP/service.h"            // avp::DeviceName
+#include "C_ESP/FleetServerOTA.hpp"   // avp::PullUpdateFromFleetServer
+#include "C_ESP/FleetServerDebug.hpp" // avp::FleetServerDebug (debug -> bsd Debug_log.csv)
+#include "C_ESP/BootLog.hpp"          // avp::LogBoot
 #include <Arduino.h>
 #include <EEPROM.h>
 
 #ifndef GIT_REV
 #define GIT_REV "nogit" // overridden by git_rev.py extra_script at build time
 #endif
-// Human deploy counter + GIT_REV; the single version source (bump on each upload).
-// Fleet OTA is MD5-gated, so this string is informational (logged by the server).
-static constexpr const char *Version = "6.33+" GIT_REV;
+// Human deploy counter, bumped on every upload; the single version source.
+#define FW_VERSION "6.34"
+// Web-page form, FW_VERSION with the build's commit appended. Fleet OTA is
+// MD5-gated, so both forms are informational.
+static constexpr const char *Version = FW_VERSION "+" GIT_REV;
 
 static auto &w = avp::StaticWebServer::s; // just an alias to make code shorter
 
@@ -27,14 +31,21 @@ static auto &w = avp::StaticWebServer::s; // just an alias to make code shorter
 // header, UART1 is not accessable. Reenable DEBUG_SERIAL is  you want debug output, but
 // it kills cse7766 communication
 
+// Teed to the device's own /log page and to the fleet-wide Debug_log.csv on bsd.
+// Deliberately NOT gated on NDEBUG: what survives a release build is event-level only
+// (BOOT, FW_UPDATE, credential/AP-mode/OTA-failure lines) because C_ESP compiles its
+// per-AP scan chatter out under NDEBUG. A build WITHOUT NDEBUG posts one row per AP per
+// 10-minute rescan -- do not point a debug build at the fleet log.
 extern "C" {
   int debug_puts(const char *s) {
-#ifndef NDEBUG
     avp::HTML_Log::Add(s);
+    // ArduinoOTA's progress line ends in '\r', which never flushes a row -- it would
+    // ship as overlong junk once the 160-char buffer filled. Nothing during an OTA is
+    // worth centralizing anyway.
+    if(!avp::StaticWiFi_Conn::OTA_IsInProgress) avp::FleetServerDebug::puts(s);
 #ifdef DEBUG_SERIAL
-      DEBUG_SERIAL.print(s);
-      DEBUG_SERIAL.flush();
-#endif
+    DEBUG_SERIAL.print(s);
+    DEBUG_SERIAL.flush();
 #endif
     return 0;
   }
@@ -135,6 +146,9 @@ void setup() {
   // prefix + the fleet-OTA base name (<NAME>.bin).
   Opts.Name = avp::DeviceName(NAME);
   Opts.Version = Version;
+  // Tee debug output to the fleet-wide log. Opts.Name points at DeviceName's static
+  // buffer, so it stays valid for the life of the sink.
+  avp::FleetServerDebug::begin("http://bsd:8000/", Opts.Name);
   Opts.AddUsage =
     F("<li> <a href='/on'>on</a></li><li> <a href='/off'>off</a></li>"
       "<li> <a href='/read'>read</a> - returns <em>\"Voltage Current Power Energy "
@@ -186,16 +200,27 @@ void setup() {
 // successful update REBOOTS, and boot forces the relay LOW (see setup) -- so only
 // auto-update while the relay is already OFF. That way a fleet rollout never cuts
 // power to a live load, and a plug powering a normally-off reserve server updates
-// itself precisely in its safe window. To update a plug whose load is ON, turn it
-// off briefly or push via espota to plug-XXYYZZ.
+// itself precisely in its safe window. No load here tolerates being switched off to
+// hurry an update along; a plug whose load is ON waits for its own next off window,
+// or takes an espota push to plug-XXYYZZ (which lasts only until that window).
 static void CheckFleetOTA() {
-  if(relayState == LOW) avp::PullUpdateFromFleetServer(NAME, Version);
+  if(relayState == LOW) avp::PullUpdateFromFleetServer(NAME, FW_VERSION);
 } // CheckFleetOTA
+
+// The BOOT row has to wait for the connection -- FleetServerDebug silently drops
+// anything posted before WL_CONNECTED, so emitting it from setup() would lose it.
+static void LogBootOnce() {
+  static bool done = false;
+  if(done || WiFi.status() != WL_CONNECTED) return;
+  done = true;
+  avp::LogBoot(FW_VERSION, GIT_REV, sprintf_static("rssi=%d", (int)WiFi.RSSI()));
+} // LogBootOnce
 
 void loop() {
   // put your main code here, to run repeatedly:
   avp::Periodically<ButtonCheck>::Run(ButtonChkPeriod_ms);
   avp::Periodically<ReadCse7766>::Run(1000);
+  avp::Periodically<LogBootOnce>::Run(1000); // no-op after the first connected pass
   avp::Periodically<CheckFleetOTA>::Run(60UL * 1000); // fleet pull-OTA, once a minute (relay-off only)
   avp::StaticWebServer::call_in_loop();
   yield();

@@ -43,7 +43,7 @@ Project-specific code is just `src/main.cpp` + `src/cse7766.cpp` + `include/cse7
 - `setup()` initializes EEPROM (stores calibration `ratio` struct with sanity range check), then `avp::StaticWebServer::begin(Opts)`. `StaticWebServer` is a singleton: `avp::StaticWebServer::s` is the underlying `WebServer` instance; `main.cpp` aliases it as `w` and registers route handlers on it.
 - `loop()` is just three `avp::Periodically<Fn>::Run(ms)` invocations (button check 100ms, CSE7766 read 1s, web-server tick every iteration) plus `yield()`. No FreeRTOS tasks.
 - `StaticWiFi_Conn` runs the status LED from a hardware timer (`Opts.status_indication_func_ = avp::StaticWiFi_Conn::Blinken<LED>`), so the indication keeps working even when `loop()` is blocked. `AVP_RAM_ATTR` is `IRAM_ATTR` (see `platformio.ini`) — anything called from the timer ISR must live in IRAM.
-- Debug output: `debug_puts` (defined in `main.cpp`) tees to `Serial1` and to `HTML_Log`, which is what the device’s built-in web log page renders. Compiles to a no-op under `-DNDEBUG`.
+- Debug output: `debug_puts` (defined in `main.cpp`) tees to `HTML_Log` (the device’s `/log` page), to the fleet-wide `Debug_log.csv` on bsd via `avp::FleetServerDebug`, and to `Serial1` only if `DEBUG_SERIAL` is defined. **Not gated on `NDEBUG`** — a release build still reports events (`BOOT`, `FW_UPDATE`, credential / AP-mode / OTA-failure lines) because C_ESP compiles its per-AP scan chatter out under `NDEBUG`. Building *without* `NDEBUG` posts one row per visible AP per 10-minute rescan, so never point a debug build at the fleet log. The tee is suppressed while an OTA runs (ArduinoOTA's `\r`-terminated progress line would ship as junk rows).
 
 ## Hardware pins (Sonoff S31)
 
