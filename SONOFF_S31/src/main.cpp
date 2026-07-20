@@ -20,7 +20,7 @@
 #define GIT_REV "nogit" // overridden by git_rev.py extra_script at build time
 #endif
 // Human deploy counter, bumped on every upload; the single version source.
-#define FW_VERSION "6.34"
+#define FW_VERSION "6.35"
 // Web-page form, FW_VERSION with the build's commit appended. Fleet OTA is
 // MD5-gated, so both forms are informational.
 static constexpr const char *Version = FW_VERSION "+" GIT_REV;
@@ -168,10 +168,12 @@ void setup() {
   // WiFi.setPhyMode(WIFI_PHY_MODE_11G); that's 802.11g mode, we do not do it
   
   avp::HTML_Log::begin();
+#ifdef DEBUG // bench-only flash inventory: pure noise in the fleet log
   debug_puts("debug_puts output here!\n");
   debug_printf("Sketch size:     %u\n", ESP.getSketchSize());
   debug_printf("Free sketch space: %u\n", ESP.getFreeSketchSpace());
   debug_printf("Flash chip size:   %u\n", ESP.getFlashChipRealSize());
+#endif
 
   w.on("/on", HTTP_GET, [&]() {
     digitalWrite(RELAY, relayState = HIGH);
@@ -213,7 +215,12 @@ static void LogBootOnce() {
   static bool done = false;
   if(done || WiFi.status() != WL_CONNECTED) return;
   done = true;
-  avp::LogBoot(FW_VERSION, GIT_REV, sprintf_static("rssi=%d", (int)WiFi.RSSI()));
+  // NOT sprintf_static here: LogBoot formats through debug_printf, which builds its
+  // output in the very buffer sprintf_static returns -- the %s argument gets clobbered
+  // mid-format, emitting an empty field and a duplicated row.
+  char extra[24];
+  snprintf(extra, sizeof extra, "rssi=%d", (int)WiFi.RSSI());
+  avp::LogBoot(FW_VERSION, GIT_REV, extra);
 } // LogBootOnce
 
 void loop() {
