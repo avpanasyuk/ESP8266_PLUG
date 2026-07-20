@@ -1,0 +1,3 @@
+- [Never cycle a plug to force an OTA](never-cycle-a-plug-to-force-ota.md) — no plug's load survives ~30 s without power; publish and wait.
+- [Deploy = publish plug.bin on bsd](fleet-deploy-not-espota.md) — espota to a relay-off plug is reverted within 60 s by the fleet pull.
+- [Session handoff 2026-07-20](session-handoff-2026-07-20.md) — 6.33 published, no unit running it yet; PLUG branch unmerged (untracked).
