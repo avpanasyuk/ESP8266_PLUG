@@ -8,17 +8,25 @@ PlatformIO firmware for a Sonoff S31 smart plug (ESP8266 + CSE7766 power monitor
 
 ## Build / upload / monitor
 
-PlatformIO drives everything. The default env (`[platformio] default_envs = espota`) uploads OTA over WiFi to the hostname set by `[common] netname` in `platformio.ini`; the device must be on the same network and already running OTA-capable firmware.
+PlatformIO drives everything. `[common] netname` (= `plug`) is the **fleet prefix**, not a device name: it feeds `-DNAME=` and names the fleet image `<netname>.bin`. Each unit's addressable name is `avp::DeviceName(NAME)` = `plug-XXYYZZ` (last 3 MAC bytes), derived at runtime — that is the mDNS/softAP/espota target, so `--upload-port` must name the individual unit.
 
 ```
 pio run                       # build default env (espota = release + OTA upload)
-pio run -t upload             # build + upload via OTA to ${common.netname}
-pio run -e esp12e -t upload   # serial upload via COM12 instead (first flash, or when OTA is dead)
+pio run -t upload --upload-port plug-XXYYZZ.local   # OTA to one unit
+pio run -e esp12e -t upload   # serial upload (first flash, or when OTA is dead); port set by upload_port in platformio.ini
 pio run -e debug -t upload    # debug build (-Og -ggdb3 -DDEBUG=1) over OTA path’s upload settings
 pio device monitor            # serial monitor at 74880 baud (DEBUG_SERIAL = Serial1)
 ```
 
-When changing the device name, update `common.netname` in `platformio.ini` — it is wired to both `-DNAME=` (used in code and as the AP SSID) and the OTA `upload_port`, so they stay in sync.
+## Deploying: the fleet image is authoritative, espota is not
+
+Every minute **while its relay is off**, a plug pulls `http://bsd:8000/firmware/plug.bin` and flashes it if the MD5 differs (`CheckFleetOTA` in `main.cpp`). So an espota push to a relay-off unit is **reverted within 60 s** by whatever is on bsd — deploy by publishing the image instead, and bump `Version` in `main.cpp` first so the running build is identifiable:
+
+```
+scp .pio/build/espota/firmware.bin bsd:/POOL/Packages/TEMP/FIRMWARE/plug.bin
+```
+
+Keep the outgoing image as `plug.bin.<version>` beside it for rollback. espota is the right tool only for a unit whose load is **on** (fleet OTA is skipped then, so power is never cut to a live load) — and that flash lasts only until the relay is next switched off.
 
 ## Source layout
 
