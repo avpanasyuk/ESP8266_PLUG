@@ -18,5 +18,11 @@ LogBoot's format) flushed one row early and shipped the copied prefix as a secon
 
 **How to apply:** format into a local buffer and pass that.
 `char extra[24]; snprintf(extra, sizeof extra, "rssi=%d", rssi); avp::LogBoot(FW, REV, extra);`
-Generally: a `sprintf_static` pointer is valid only until the next call, and any
-`debug_*` call is a next call. See [[fleet-deploy-not-espota]].
+
+**Fixed in the library since C_General `547339c`** (a project only gets it by bumping):
+`debug_vprintf` stages into a per-call stack buffer (`DEBUG_PRINTF_BUFFER_SIZE`, default 256),
+so `debug_*` can no longer clobber a `sprintf_static` result at all; and in C++
+`sprintf_static` returns `avp::StaticStr` (`StaticStr.hpp`), a move-only claim that makes
+nesting or double-use assert instead of corrupt. Converts implicitly to `const char *`, so
+call sites are unchanged — except where a **class** parameter is expected (Arduino `String`,
+printf-family varargs), which needs an explicit `.c_str()`.
