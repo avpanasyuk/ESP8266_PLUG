@@ -28,6 +28,19 @@ scp .pio/build/espota/firmware.bin bsd:/POOL/Packages/TEMP/FIRMWARE/plug.bin
 
 Keep the outgoing image as `plug.bin.<version>` beside it for rollback. espota is the right tool only for a unit whose load is **on** (fleet OTA is skipped then, so power is never cut to a live load) — and that flash lasts only until the relay is next switched off.
 
+## Enrolling a plug that predates the fleet (old `NAME`, no fleet OTA)
+
+A unit still running a pre-fleet build answers under its own baked-in hostname (`plug8.local`, …), never appears in bsd's `Debug_log.csv`, and cannot self-update. Push **the published image, not a fresh local build** — espota-ing a locally built binary lands a different MD5 than `plug.bin`, so the unit re-flashes itself once more at the first relay-off window:
+
+```
+scp bsd:/POOL/Packages/TEMP/FIRMWARE/plug.bin <workdir>\plug.bin
+python <framework-arduinoespressif8266>\tools\espota.py -i <old-name>.local -p 8266 -f <workdir>\plug.bin -r
+```
+
+Check `/read`'s last field (relay state) first — flashing reboots the unit. After the reboot the unit renames itself to `plug-XXYYZZ` (`avp::DeviceName`), so it is reachable only under the new name; confirm enrollment by its `BOOT` row in `/mnt/T/Debug_log.csv` on bsd.
+
+Finding an unenrolled unit: sweep the LAN and match the Sonoff OUI `c4:5b:be` in `arp -a` against the plugs already known from the fleet log.
+
 ## Source layout
 
 `build_src_filter` in `platformio.ini` is explicit — only listed files compile. The three `src/C_*` subdirectories are **git submodules** (pinned via `.gitmodules`), tracking the shared libraries' `development` trunk:
