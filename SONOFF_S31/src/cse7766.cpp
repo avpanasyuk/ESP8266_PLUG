@@ -119,7 +119,7 @@ static void ProcessCse7766Packet() {
   if (!CounterValid) {
     cfPulsesLast = cfPulses;
     CounterValid = true;
-    WindowStart_ms = now;
+    WindowStart_ms = LastPulse_ms = now; // idle is timed from boot until a pulse arrives
   }
   unsigned difference = (cfPulses - cfPulsesLast) & 0xFFFF; // 16-bit counter, wraps
   cfPulsesLast = cfPulses;
@@ -140,7 +140,7 @@ static void ProcessCse7766Packet() {
         WindowPulses = 0;
       }
     }
-  } else if (WindowAnchored) {
+  } else {
     // No pulse yet, so the rate is at most one per the time since the last one -- that
     // caps the power and decays it, instead of the last rate sticking after the load
     // went away. Timed from the last PULSE, not from the window start: a window left
@@ -151,9 +151,16 @@ static void ProcessCse7766Packet() {
       if (bound < power) power = bound;
     }
     // Below the meter's floor for this long: report it as off rather than as an ever
-    // shrinking sliver. Clears the current reading too -- the chip keeps flagging its
-    // noise floor (~0.06 A at an open relay) as a fresh value.
-    if (idle_ms >= IdleZero_ms) power = current = 0;
+    // shrinking sliver. Clears the current reading too -- with an open relay the chip
+    // still offers its ~0.06 A noise floor as a freshly updated value, and holding that
+    // is a worse lie than dropping the reactive current of a load under 0.2 W. Drop the
+    // window anchor with it, so the load's return is timed from its first new pulse
+    // rather than against a window opened before the gap.
+    if (idle_ms >= IdleZero_ms) {
+      power = current = 0;
+      WindowAnchored = false;
+      WindowPulses = 0;
+    }
   }
 
   // Energy used to self-clear after MAX_ENREGY_RESET_COUNT readings of zero power,
