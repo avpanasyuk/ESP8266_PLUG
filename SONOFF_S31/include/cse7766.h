@@ -3,7 +3,7 @@
 extern double power;   // W
 extern double voltage; // V
 extern double current; // A
-extern double energy;  // joules (Ws) since boot or the last ResetEnergy()
+extern double energy;  // Wh since boot or the last ResetEnergy()
 
 extern struct ratio_t {
     float V, C, P;

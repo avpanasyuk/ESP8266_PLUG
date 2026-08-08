@@ -6,7 +6,7 @@
 double power = 0;   // W, from the CF pulse rate (see PowerWindow_ms below)
 double voltage = 0; // V
 double current = 0; // A
-double energy = 0;  // joules (Ws) since boot or the last ResetEnergy()
+double energy = 0;  // Wh since boot or the last ResetEnergy()
 
 struct ratio_t ratio = {1.04, 1.04, 1.08}; // ok, they were pretty similar on two first plugs, set them as a default
 
@@ -123,7 +123,8 @@ static void ProcessCse7766Packet() {
   }
   unsigned difference = (cfPulses - cfPulsesLast) & 0xFFFF; // 16-bit counter, wraps
   cfPulsesLast = cfPulses;
-  energy += difference * Ws_per_pulse;
+  // Joules per pulse is what the chip gives; watt-hours is what a meter should report.
+  energy += difference * Ws_per_pulse / 3600.0;
 
   if (difference) {
     LastPulse_ms = now;

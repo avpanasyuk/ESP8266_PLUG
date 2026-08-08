@@ -20,7 +20,7 @@
 #define GIT_REV "nogit" // overridden by git_rev.py extra_script at build time
 #endif
 // Human deploy counter, bumped on every upload; the single version source.
-#define FW_VERSION "6.39"
+#define FW_VERSION "6.40"
 // Web-page form, FW_VERSION with the build's commit appended. Fleet OTA is
 // MD5-gated, so both forms are informational.
 static constexpr const char *Version = FW_VERSION "+" GIT_REV;
@@ -151,7 +151,7 @@ void setup() {
   avp::FleetServerDebug::begin("http://bsd:8000/", Opts.Name);
   Opts.AddUsage =
     F("<li> <a href='/on'>on</a></li><li> <a href='/off'>off</a></li>"
-      "<li> <a href='/read'>read</a> - returns <em>\"Voltage[V] Current[A] Power[W] Energy[Ws] "
+      "<li> <a href='/read'>read</a> - returns <em>\"Voltage[V] Current[A] Power[W] Energy[Wh] "
       "RelayStatus\"</em></li>"
       "<li> <a href='/energy_reset' onclick='return confirm(\"Zero the accumulated energy?\")'>energy_reset</a>"
       " - zero the energy accumulator</li>"
@@ -195,7 +195,10 @@ void setup() {
   });
 
   w.on("/read", HTTP_GET, [&]() {
-    w.send(200, "text/plain", String(voltage) + " " + current + " " + power + " " + energy + " " + relayState + "\n");
+    // Energy gets 4 decimals: at ~0.0016 Wh per meter pulse, the default 2 would sit
+    // unmoved for minutes on a small load.
+    w.send(200, "text/plain",
+           String(voltage) + " " + current + " " + power + " " + String(energy, 4) + " " + relayState + "\n");
   });
 
   w.on("/energy_reset", HTTP_GET, [&]() {
