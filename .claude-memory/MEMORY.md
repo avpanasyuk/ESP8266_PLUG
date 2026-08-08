@@ -1,4 +1,4 @@
 - [Never cycle a plug to force an OTA](never-cycle-a-plug-to-force-ota.md) — no plug's load survives ~30 s without power; publish and wait.
-- [Deploy = publish plug.bin on bsd](fleet-deploy-not-espota.md) — espota to a relay-off plug is reverted within 60 s by the fleet pull.
+- [Deploy = publish plug.bin on bsd](fleet-deploy-not-espota.md) — the fleet pull reverts an espota'd relay-off plug ~10 s after it boots, so publishing is the only way to test on hardware.
 - [sprintf_static aliases debug_printf's buffer](sprintf-static-buffer-aliasing.md) — passing it into LogBoot emptied a field and duplicated the row.
-- [Session handoff 2026-07-30](session-handoff-2026-07-30.md) — plug8 enrolled as plug-E23948 on 6.36; submodule bump committed, push held.
+- [Session handoff 2026-08-08](session-handoff-2026-08-08.md) — low-load 0 W fixed via the CF pulse train, fleet on 6.39; downstream "don't trust the plug" notes corrected.
