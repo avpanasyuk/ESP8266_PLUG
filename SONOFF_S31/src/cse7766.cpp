@@ -52,7 +52,8 @@ static constexpr uint32_t PowerWindow_ms = 1000;  // window floor; it stretches 
 static constexpr uint32_t IdleZero_ms = 30000;    // one missing pulse this long is < 0.2 W: call it off
 
 static uint32_t WindowStart_ms; // time of the pulse that opened the current window
-static unsigned WindowPulses;   // pulses since then
+static uint32_t LastPulse_ms;   // time of the most recent pulse, whatever window it fell in
+static unsigned WindowPulses;   // pulses since WindowStart_ms
 static unsigned cfPulsesLast;   // chip's free-running 16-bit pulse counter, previous frame
 static bool CounterValid;       // cfPulsesLast holds a real reading
 static bool WindowAnchored;     // WindowStart_ms is a pulse arrival, so a rate can be formed
@@ -124,27 +125,35 @@ static void ProcessCse7766Packet() {
   cfPulsesLast = cfPulses;
   energy += difference * Ws_per_pulse;
 
-  const uint32_t elapsed_ms = now - WindowStart_ms;
   if (difference) {
+    LastPulse_ms = now;
     if (!WindowAnchored) { // first pulse: start timing from it, no rate yet
       WindowStart_ms = now;
       WindowPulses = 0;
       WindowAnchored = true;
     } else {
       WindowPulses += difference;
+      const uint32_t elapsed_ms = now - WindowStart_ms;
       if (elapsed_ms >= PowerWindow_ms) {
         power = WindowPulses * Ws_per_pulse * 1000.0 / elapsed_ms;
         WindowStart_ms = now;
         WindowPulses = 0;
       }
     }
-  } else if (elapsed_ms) {
-    // Still waiting for the pulse that closes the window. At most one more can be in
-    // flight, which caps the power -- without this the last rate would stick forever
-    // after the load went away.
-    double bound = (WindowPulses + 1) * Ws_per_pulse * 1000.0 / elapsed_ms;
-    if (bound < power) power = bound;
-    if (elapsed_ms >= IdleZero_ms && !WindowPulses) power = current = 0;
+  } else if (WindowAnchored) {
+    // No pulse yet, so the rate is at most one per the time since the last one -- that
+    // caps the power and decays it, instead of the last rate sticking after the load
+    // went away. Timed from the last PULSE, not from the window start: a window left
+    // holding a pulse that never closed it would otherwise never satisfy the cutoff.
+    const uint32_t idle_ms = now - LastPulse_ms;
+    if (idle_ms) {
+      double bound = Ws_per_pulse * 1000.0 / idle_ms;
+      if (bound < power) power = bound;
+    }
+    // Below the meter's floor for this long: report it as off rather than as an ever
+    // shrinking sliver. Clears the current reading too -- the chip keeps flagging its
+    // noise floor (~0.06 A at an open relay) as a fresh value.
+    if (idle_ms >= IdleZero_ms) power = current = 0;
   }
 
   // Energy used to self-clear after MAX_ENREGY_RESET_COUNT readings of zero power,
