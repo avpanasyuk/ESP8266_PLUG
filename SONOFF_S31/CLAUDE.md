@@ -20,7 +20,9 @@ pio device monitor            # serial monitor at 74880 baud (DEBUG_SERIAL = Ser
 
 ## Deploying: the fleet image is authoritative, espota is not
 
-Every minute **while its relay is off**, a plug pulls `http://bsd:8000/firmware/plug.bin` and flashes it if the MD5 differs (`CheckFleetOTA` in `main.cpp`). So an espota push to a relay-off unit is **reverted within 60 s** by whatever is on bsd — deploy by publishing the image instead, and bump `Version` in `main.cpp` first so the running build is identifiable:
+Every minute **while its relay is off**, a plug pulls `http://bsd:8000/firmware/plug.bin` and flashes it if the MD5 differs (`CheckFleetOTA` in `main.cpp`). So an espota push to a relay-off unit is **reverted by whatever is on bsd, about ten seconds after the unit reboots** — `avp::Periodically` initialises its deadline at static-init time, so the first `Run()` fires on the first loop pass and the poll lands the moment WiFi comes up. There is no 60-second grace window to race with a `/on`: a bench build **cannot** be tested by espota-ing a relay-off plug (verified 2026-08-08 — `BOOT,fw=6.37` at 13:36:17, `FW_UPDATE,was=6.37` at 13:36:27). Test by publishing, or by an image built with the poll compiled out.
+
+Deploy by publishing the image, and bump `FW_VERSION` in `main.cpp` first so the running build is identifiable:
 
 ```
 scp .pio/build/espota/firmware.bin bsd:/POOL/Packages/TEMP/FIRMWARE/plug.bin
@@ -57,6 +59,16 @@ Project-specific code is just `src/main.cpp` + `src/cse7766.cpp` + `include/cse7
 - `loop()` is just three `avp::Periodically<Fn>::Run(ms)` invocations (button check 100ms, CSE7766 read 1s, web-server tick every iteration) plus `yield()`. No FreeRTOS tasks.
 - `StaticWiFi_Conn` runs the status LED from a hardware timer (`Opts.status_indication_func_ = avp::StaticWiFi_Conn::Blinken<LED>`), so the indication keeps working even when `loop()` is blocked. `AVP_RAM_ATTR` is `IRAM_ATTR` (see `platformio.ini`) — anything called from the timer ISR must live in IRAM.
 - Debug output: `debug_puts` (defined in `main.cpp`) tees to `HTML_Log` (the device’s `/log` page), to the fleet-wide `Debug_log.csv` on bsd via `avp::FleetServerDebug`, and to `Serial1` only if `DEBUG_SERIAL` is defined. **Not gated on `NDEBUG`** — a release build still reports events (`BOOT`, `FW_UPDATE`, credential / AP-mode / OTA-failure lines) because C_ESP compiles its per-AP scan chatter out under `NDEBUG`. Building *without* `NDEBUG` posts one row per visible AP per 10-minute rescan, so never point a debug build at the fleet log. The tee is suppressed while an OTA runs (ArduinoOTA's `\r`-terminated progress line would ship as junk rows).
+
+## Power metering: watts come from the CF pulse train, not the chip's power register
+
+`/read` returns `Voltage[V] Current[A] Power[W] Energy[Ws] RelayStatus`. Energy accumulates from boot until `/energy_reset`; nothing clears it automatically.
+
+The CSE7766 refreshes its power register only when a CF period completes, and sets the byte-20 "updated" flag on the single frame that follows — one frame out of the ~20 it emits per second. **At low load that register is worthless to a sampling reader**: at 5.9 W a pulse arrives every ~1.8 s, so six of eight `/read`s reported `0.00 0.00` while energy climbed (measured on `plug-E0F4B2`, 2026-08-08). Zeroing on a frame with the flag clear was the bug — clear means "no news", not "zero", so voltage and current now hold their last value and are cleared only by a real cycle-overflow flag (header `0xF8`/`0xF4`).
+
+Power is derived from the pulses instead, which needs no luck and no separate calibration: the chip defines `P = coefP / power_cycle_us` and CF emits one pulse per `power_cycle`, so **one pulse is exactly `coefP · 10⁻⁶` joules** at any load (measured: 10.52 Ws/pulse on `plug-E0F4B2`, 5.095 Ws/pulse on `plug-E23948` — `coefP` is per-chip). Both edges of the averaging window are pulse arrivals, so the count between them is exact; the window floor is 1 s and stretches to the next pulse. While waiting, the reading is clamped by the one-more-pulse-in-flight upper bound, so a load that goes away decays instead of sticking, and 30 s without a pulse (< 0.2 W) reads zero.
+
+Consequence for consumers: `turn_comp_off.sh` polls field 3 for `< 10 W`, and that field is now continuous rather than mostly zero — the threshold still means what it did, but it no longer trips on a stale zero.
 
 ## Hardware pins (Sonoff S31)
 

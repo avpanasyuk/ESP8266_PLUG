@@ -20,7 +20,7 @@
 #define GIT_REV "nogit" // overridden by git_rev.py extra_script at build time
 #endif
 // Human deploy counter, bumped on every upload; the single version source.
-#define FW_VERSION "6.36"
+#define FW_VERSION "6.37"
 // Web-page form, FW_VERSION with the build's commit appended. Fleet OTA is
 // MD5-gated, so both forms are informational.
 static constexpr const char *Version = FW_VERSION "+" GIT_REV;
@@ -151,8 +151,10 @@ void setup() {
   avp::FleetServerDebug::begin("http://bsd:8000/", Opts.Name);
   Opts.AddUsage =
     F("<li> <a href='/on'>on</a></li><li> <a href='/off'>off</a></li>"
-      "<li> <a href='/read'>read</a> - returns <em>\"Voltage Current Power Energy "
+      "<li> <a href='/read'>read</a> - returns <em>\"Voltage[V] Current[A] Power[W] Energy[Ws] "
       "RelayStatus\"</em></li>"
+      "<li> <a href='/energy_reset' onclick='return confirm(\"Zero the accumulated energy?\")'>energy_reset</a>"
+      " - zero the energy accumulator</li>"
       "<b>Correction multipliers: </b><br>"
       "<form method='get' action='set'><label>Current: </label><input name='CurrentFactor' length=5><input "
       "type='submit'></form>"
@@ -195,6 +197,11 @@ void setup() {
   w.on("/read", HTTP_GET, [&]() {
     w.send(200, "text/plain", String(voltage) + " " + current + " " + power + " " + energy + " " + relayState + "\n");
   });
+
+  w.on("/energy_reset", HTTP_GET, [&]() {
+    ResetEnergy();
+    w.send(200, "text/plain", String("Energy accumulator zeroed"));
+  });
 } // setup
 
 // Poll the fleet server for a new <NAME>.bin and flash it if the running image
@@ -215,18 +222,17 @@ static void LogBootOnce() {
   static bool done = false;
   if(done || WiFi.status() != WL_CONNECTED) return;
   done = true;
-  // NOT sprintf_static here: LogBoot formats through debug_printf, which builds its
-  // output in the very buffer sprintf_static returns -- the %s argument gets clobbered
-  // mid-format, emitting an empty field and a duplicated row.
-  char extra[24];
-  snprintf(extra, sizeof extra, "rssi=%d", (int)WiFi.RSSI());
-  avp::LogBoot(FW_VERSION, GIT_REV, extra);
+  // No `extra`: LogBoot reads and reports RSSI itself, so passing one here duplicated
+  // the field in the fleet CSV.
+  avp::LogBoot(FW_VERSION, GIT_REV);
 } // LogBootOnce
 
 void loop() {
   // put your main code here, to run repeatedly:
   avp::Periodically<ButtonCheck>::Run(ButtonChkPeriod_ms);
-  avp::Periodically<ReadCse7766>::Run(1000);
+  // Every pass, not periodically: the meter emits a frame each ~50 ms into a 256-byte
+  // UART buffer, and a stale frame costs both pulse timing and update flags.
+  ReadCse7766();
   avp::Periodically<LogBootOnce>::Run(1000); // no-op after the first connected pass
   avp::Periodically<CheckFleetOTA>::Run(60UL * 1000); // fleet pull-OTA, once a minute (relay-off only)
   avp::StaticWebServer::call_in_loop();

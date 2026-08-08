@@ -3,10 +3,10 @@
 #include "cse7766.h"
 
 // CSE7766 data.
-double power = 0;
-double voltage = 0;
-double current = 0;
-double energy = 0;
+double power = 0;   // W, from the CF pulse rate (see PowerWindow_ms below)
+double voltage = 0; // V
+double current = 0; // A
+double energy = 0;  // joules (Ws) since boot or the last ResetEnergy()
 
 struct ratio_t ratio = {1.04, 1.04, 1.08}; // ok, they were pretty similar on two first plugs, set them as a default
 
@@ -14,9 +14,6 @@ struct ratio_t ratio = {1.04, 1.04, 1.08}; // ok, they were pretty similar on tw
 unsigned char serialBuffer[24];
 // Serial error flags.
 int error;
-// Energy reset counter.
-int energyResetCounter;
-#define MAX_ENREGY_RESET_COUNT 12
 
 // CSE7766 error codes.
 #define SENSOR_ERROR_OK 0            // No error.
@@ -31,6 +28,34 @@ int energyResetCounter;
 #define SENSOR_ERROR_OTHER 99        // Any other error.
 #define CSE7766_V1R 1.0              // 1mR current resistor.
 #define CSE7766_V2R 1.0              // 1M voltage resistor.
+
+// Header byte flags, meaningful when the byte reads 0xF?: the named measuring cycle
+// overflowed the chip's 24-bit timer, i.e. that quantity is below what it can resolve.
+#define CSE7766_COEF_CORRUPT 0x01
+#define CSE7766_CURRENT_OVERFLOW 0x04
+#define CSE7766_VOLTAGE_OVERFLOW 0x08
+// Byte 20 flags: set on the frame that follows a refresh of the named register. Clear
+// means "no new value in this frame", NOT "the quantity is zero".
+#define CSE7766_CURRENT_UPDATED 0x20
+#define CSE7766_VOLTAGE_UPDATED 0x40
+
+// Instantaneous power is derived from the CF pulse train, not from the chip's power
+// register: that register is refreshed only when a CF period completes -- once every
+// ~3 s at 2 W -- and its update flag is set in a single frame out of the ~20 the chip
+// emits per second, so at low load a reader almost never catches a fresh value.
+// The pulse train needs no such luck and costs nothing in calibration: the chip defines
+// P = coefP / power_cycle_us and CF emits one pulse per power_cycle, so one pulse is
+// exactly coefP * 1e-6 joules at any load. Both edges of the averaging window are pulse
+// arrivals, so the pulse count between them is exact and only timestamp jitter (a few ms
+// against a >= 1 s window) enters the rate.
+static constexpr uint32_t PowerWindow_ms = 1000;  // window floor; it stretches to the next pulse
+static constexpr uint32_t IdleZero_ms = 30000;    // one missing pulse this long is < 0.2 W: call it off
+
+static uint32_t WindowStart_ms; // time of the pulse that opened the current window
+static unsigned WindowPulses;   // pulses since then
+static unsigned cfPulsesLast;   // chip's free-running 16-bit pulse counter, previous frame
+static bool CounterValid;       // cfPulsesLast holds a real reading
+static bool WindowAnchored;     // WindowStart_ms is a pulse arrival, so a rate can be formed
 
 // CSE7766 checksum.
 static bool CheckSum() {
@@ -55,10 +80,12 @@ static void ProcessCse7766Packet() {
     error = SENSOR_ERROR_CALIBRATION;
     return;
   }
-  if ((serialBuffer[0] & 0xFC) == 0xFC) {
+  const uint8_t status = (serialBuffer[0] & 0xF0) == 0xF0 ? serialBuffer[0] : 0;
+  if (status & CSE7766_COEF_CORRUPT) {
     error = SENSOR_ERROR_OTHER;
     return;
   }
+  error = SENSOR_ERROR_OK;
 
   // Retrieve calibration coefficients.
   unsigned long coefV = (serialBuffer[2] << 16 | serialBuffer[3] << 8 | serialBuffer[4]);
@@ -66,89 +93,94 @@ static void ProcessCse7766Packet() {
   unsigned long coefP = (serialBuffer[14] << 16 | serialBuffer[15] << 8 | serialBuffer[16]);
   uint8_t adj = serialBuffer[20];
 
-  // Calculate voltage.
-  voltage = 0;
-  if ((adj & 0x40) == 0x40) {
+  // Voltage and current keep their last value through frames that carry no update:
+  // an unset flag means the register has not been refreshed yet, so zeroing it here
+  // would report 0 for every frame but the lucky one. An overflowed cycle, on the
+  // other hand, is a real statement that the quantity is under the chip's floor.
+  if (status & CSE7766_VOLTAGE_OVERFLOW) voltage = 0;
+  else if (adj & CSE7766_VOLTAGE_UPDATED) {
     unsigned long voltageCycle = serialBuffer[5] << 16 | serialBuffer[6] << 8 | serialBuffer[7];
-    voltage = ratio.V * coefV / voltageCycle / CSE7766_V2R;
+    if (voltageCycle) voltage = ratio.V * coefV / voltageCycle / CSE7766_V2R;
   }
 
-  // Calculate power.
-  power = 0;
-  if ((adj & 0x10) == 0x10) {
-    if ((serialBuffer[0] & 0xF2) != 0xF2) {
-      unsigned long powerCycle = serialBuffer[17] << 16 | serialBuffer[18] << 8 | serialBuffer[19];
-      power = ratio.P * coefP / powerCycle / CSE7766_V1R / CSE7766_V2R;
-    }
+  if (status & CSE7766_CURRENT_OVERFLOW) current = 0;
+  else if (adj & CSE7766_CURRENT_UPDATED) {
+    unsigned long currentCycle = serialBuffer[11] << 16 | serialBuffer[12] << 8 | serialBuffer[13];
+    if (currentCycle) current = ratio.C * coefC / currentCycle / CSE7766_V1R;
   }
 
-  // Calculate current.
-  current = 0;
-  if ((adj & 0x20) == 0x20) {
-    if (power > 0) {
-      unsigned long currentCycle = serialBuffer[11] << 16 | serialBuffer[12] << 8 | serialBuffer[13];
-      current = ratio.C * coefC / currentCycle / CSE7766_V1R;
-    }
-  }
+  // Energy and power from the pulse counter. A cycle overflow does not invalidate it:
+  // the counter keeps ticking below the register's range, which is the whole point.
+  const double Ws_per_pulse = ratio.P * coefP / 1000000.0;
+  unsigned cfPulses = serialBuffer[21] << 8 | serialBuffer[22];
+  const uint32_t now = millis();
 
-  // Calculate energy.
-  unsigned int difference;
-  static unsigned int cfPulsesLast = 0;
-  unsigned int cfPulses = serialBuffer[21] << 8 | serialBuffer[22];
-
-  if (0 == cfPulsesLast)
+  if (!CounterValid) {
     cfPulsesLast = cfPulses;
-
-  if (cfPulses < cfPulsesLast)
-    difference = cfPulses + (0xFFFF - cfPulsesLast) + 1;
-  else
-    difference = cfPulses - cfPulsesLast;
-
-  energy += difference * (float)coefP / 1000000.0;
-  cfPulsesLast = cfPulses;
-
-  // Energy reset.
-  if (power == 0)
-    energyResetCounter++;
-  else
-    energyResetCounter = 0;
-  if (energyResetCounter >= MAX_ENREGY_RESET_COUNT) {
-    energy = 0.0;
-    energyResetCounter = 0;
+    CounterValid = true;
+    WindowStart_ms = now;
   }
+  unsigned difference = (cfPulses - cfPulsesLast) & 0xFFFF; // 16-bit counter, wraps
+  cfPulsesLast = cfPulses;
+  energy += difference * Ws_per_pulse;
+
+  const uint32_t elapsed_ms = now - WindowStart_ms;
+  if (difference) {
+    if (!WindowAnchored) { // first pulse: start timing from it, no rate yet
+      WindowStart_ms = now;
+      WindowPulses = 0;
+      WindowAnchored = true;
+    } else {
+      WindowPulses += difference;
+      if (elapsed_ms >= PowerWindow_ms) {
+        power = WindowPulses * Ws_per_pulse * 1000.0 / elapsed_ms;
+        WindowStart_ms = now;
+        WindowPulses = 0;
+      }
+    }
+  } else if (elapsed_ms) {
+    // Still waiting for the pulse that closes the window. At most one more can be in
+    // flight, which caps the power -- without this the last rate would stick forever
+    // after the load went away.
+    double bound = (WindowPulses + 1) * Ws_per_pulse * 1000.0 / elapsed_ms;
+    if (bound < power) power = bound;
+    if (elapsed_ms >= IdleZero_ms && !WindowPulses) power = current = 0;
+  }
+
+  // Energy used to self-clear after MAX_ENREGY_RESET_COUNT readings of zero power,
+  // which fired every 12 s once the power register started reading 0 at low load. The
+  // accumulator is explicit now; to re-enable an idle auto-reset, key it on
+  // (elapsed_ms >= IdleZero_ms && !WindowPulses) above -- never on power == 0.
 } // ProcessCse7766Packet
 
-// Read serial cse7766 power monitor data packet.
+// Zero the accumulator and forget the pulse baseline, so the next frame re-adopts the
+// chip's free-running counter instead of booking the pulses that happened meanwhile.
+void ResetEnergy() {
+  energy = 0;
+  CounterValid = false;
+  WindowAnchored = false;
+} // ResetEnergy
+
+// Read serial cse7766 power monitor data packets. Drains everything the chip has sent:
+// it emits a frame every ~50 ms and the UART buffer holds only 256 bytes, so consuming
+// one frame per call leaves the buffer permanently overflowing and the reader looking
+// at whatever survived, half a second stale. Call it every loop pass.
 void ReadCse7766() {
-  // Assume a non-specific error.
-  error = SENSOR_ERROR_OTHER;
   static unsigned char index = 0;
 
   while (Serial.available() > 0) {
     uint8_t input = Serial.read();
 
-    // first byte must be 0x55 or 0xF?.
-    if (index == 0) {
-      if (input != 0x55 && input < 0xF0 && input != 0xAA)
-        continue;
-    }
-    // second byte must be 0x5A.
-    else if (index == 1) {
-      if (input != 0x5A) {
-        index = 0;
-        continue;
-      }
-    }
+    // second byte must be 0x5A; if it is not, this byte may itself start a frame.
+    if (index == 1 && input != 0x5A) index = 0;
+    // first byte must be 0x55 or 0xF? or 0xAA.
+    if (index == 0 && input != 0x55 && input != 0xAA && input < 0xF0) continue;
 
     serialBuffer[index++] = input;
 
-    if (index > 23) break;
-  }
-
-  // Process packet.
-  if (index == 24) {
-    error = SENSOR_ERROR_OK;
-    ProcessCse7766Packet();
-    index = 0;
+    if (index == sizeof serialBuffer) {
+      ProcessCse7766Packet();
+      index = 0;
+    }
   }
 } // ReadCse7766
