@@ -1,5 +1,4 @@
 - [Never cycle a plug to force an OTA](never-cycle-a-plug-to-force-ota.md) — no plug's load survives ~30 s without power; publish and wait.
 - [Deploy = publish plug.bin on bsd](fleet-deploy-not-espota.md) — the fleet pull reverts an espota'd relay-off plug ~10 s after it boots, so publishing is the only way to test on hardware.
 - [sprintf_static aliases debug_printf's buffer](sprintf-static-buffer-aliasing.md) — passing it into LogBoot emptied a field and duplicated the row.
-- [A legacy-named plug is invisible to the fleet](legacy-named-plug-invisible-to-fleet.md) — pre-6.31 units answer only at their compile-time NAME; POST plug.bin to their /update.
-- [Session handoff 2026-08-08](session-handoff-2026-08-08.md) — low-load 0 W fixed via the CF pulse train, fleet deployed on 6.40; downstream "don't trust the plug" notes corrected.
+- [A legacy-named plug is invisible to the fleet](legacy-named-plug-invisible-to-fleet.md) — pre-self-naming units answer only at their compile-time NAME; POST plug.bin to their /update.
