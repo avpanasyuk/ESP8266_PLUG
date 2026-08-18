@@ -25,5 +25,8 @@ fleet poll return 304 instead of re-flashing it — the same reason [[fleet-depl
 exists. After the reboot the unit renames itself `plug-<last-3-MAC>` and the legacy name stops
 resolving.
 
+Legacy names are `PLUG<n>` (the old per-unit `netname`), resolved case-insensitively over mDNS, so a
+sweep of `PLUG1` … `PLUG9` is what enumerates the units no fleet-side source can list.
+
 **How to apply:** when a plug is physically plugged in but no fleet-side record of it exists, probe
 the legacy name before believing any of the three fleet-side sources.
