@@ -11,7 +11,7 @@ mismatch, so an espota push to a relay-off unit is overwritten by the published 
 observed 2026-07-20 (a verified 6.33 upload came back up as 6.32) and again 2026-08-08.
 
 **Why:** `CheckFleetOTA` in `main.cpp` calls `avp::PullUpdateFromFleetServer(NAME, FW_VERSION)`,
-MD5-gated, guarded on `relayState == LOW`.
+MD5-gated, guarded on the relay being open (`!RelayIsOn()`, read back from the pin).
 
 **There is no grace window to race.** `avp::Periodically` initialises `NextTime` at static-init,
 so the first `Run()` fires on the first loop pass and the poll lands the moment WiFi connects —

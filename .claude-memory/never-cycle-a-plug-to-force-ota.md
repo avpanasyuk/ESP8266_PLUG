@@ -8,7 +8,7 @@ metadata:
 Do not turn a plug's relay off to force a firmware update, and do not offer it as an
 option. No load on any plug in this fleet can be without power for ~30 s.
 
-**Why:** fleet pull-OTA only runs while `relayState == LOW` (`main.cpp`), so a plug
+**Why:** fleet pull-OTA only runs while the relay is open (`!RelayIsOn()` in `main.cpp`), so a plug
 whose relay is ON simply will not update. The tempting move is to `GET /off`, let it
 pull, then `GET /on` — that cuts power to whatever it feeds, which the user has ruled
 out for every unit.
