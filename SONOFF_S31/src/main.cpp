@@ -20,7 +20,7 @@
 #define GIT_REV "nogit" // overridden by git_rev.py extra_script at build time
 #endif
 // Human deploy counter, bumped on every upload; the single version source.
-#define FW_VERSION "6.40"
+#define FW_VERSION "6.41"
 // Web-page form, FW_VERSION with the build's commit appended. Fleet OTA is
 // MD5-gated, so both forms are informational.
 static constexpr const char *Version = FW_VERSION "+" GIT_REV;
@@ -56,8 +56,13 @@ extern "C" {
 static constexpr int ButtonChkPeriod_ms = 100;
 static constexpr int ButtonReset_s = 10;
 
-int relayState;
 bool SwitchReset = true; // Flag indicating that the hardware button has been released
+
+// Plausible span for each calibration multiplier, applied both to what EEPROM hands back at
+// boot and to what /set accepts. One definition: a /set that stored a value outside these
+// would be silently discarded at the next boot, days later, with nothing to point at.
+static constexpr float RatioMin_VC = 0.66, RatioMax_VC = 1.5;
+static constexpr float RatioMin_P = 0.5, RatioMax_P = 2.0;
 
 // esp8266 pins.
 #define ESP8266_GPIO13 13                  // Sonof green LED (LOW == ON).
@@ -67,14 +72,40 @@ const int RELAY = ESP8266_GPIO12;          // Relay switching pin. Relay is pin 
 static constexpr int LED = ESP8266_GPIO13; // On/off indicator LED. Onboard LED is 13 on Sonoff
 const int SWITCH = ESP8266_GPIO0;          // Pushbutton.
 
-static void CheckFor(const char *name, ESP8266WebServer &w, float *pvar) {
-  if(w.hasArg(name)) {
-    *pvar *= w.arg(name).toFloat();
-    w.send(200, "text/plain", String(name) + " is set to " + String(*pvar));
-    EEPROM.put(0, ratio);
-    EEPROM.commit();
+// Relay state is READ BACK from the pin, never mirrored in a variable. The inherited /pin
+// endpoint can drive GPIO12 directly, and a shadow copy would then still say LOW while the
+// load is live -- which is precisely the condition CheckFleetOTA trusts to promise that a
+// fleet update never cuts power to something running.
+static inline bool RelayIsOn() { return digitalRead(RELAY) == HIGH; }
+
+/**
+ * Nudge one calibration multiplier: /set?VoltageFactor=1.01 raises V by 1%.
+ * Both guards earn their place. An empty or non-numeric field parses as 0 and would zero the
+ * factor outright -- and the /config page ships a submit button next to each empty box, so
+ * that is one stray click, not a contrived typo. A value that lands outside the boot sanity
+ * span is refused rather than persisted, since EEPROM would hand it back and be overruled.
+ * Appends its outcome to `reply` instead of answering, so one request gets one response.
+ * @return true if `*pvar` actually changed (i.e. EEPROM needs the new value).
+ */
+static bool Nudge(const char *name, float *pvar, float lo, float hi, String &reply) {
+  if(!w.hasArg(name)) return false;
+  const String arg = w.arg(name);
+  char *end;
+  const float factor = strtof(arg.c_str(), &end);
+  if(end == arg.c_str() || *end != '\0' || !(factor > 0)) {
+    reply += String(name) + ": '" + arg + "' is not a positive number -- ignored\n";
+    return false;
   }
-} // CheckFor
+  const float New = *pvar * factor;
+  if(New < lo || New > hi) {
+    reply += String(name) + ": " + String(New, 4) + " is outside [" + String(lo, 2) + ", " +
+             String(hi, 2) + "] -- ignored\n";
+    return false;
+  }
+  *pvar = New;
+  reply += String(name) + " is set to " + String(New, 4) + "\n";
+  return true;
+} // Nudge
 
 // Handle hardware switch activation.
 // IF BUTTON IS PUSHED FOR MORE THAN "ButtonReset_s" SECONDS, WiFi CONFIGURATION IS ERASED AND MODULE
@@ -94,11 +125,7 @@ static void ButtonCheck() {
 
   // toggle the switch if there's a new button press
   if(!SwitchState && SwitchReset == true) {
-    if(relayState == HIGH) {
-      digitalWrite(RELAY, relayState = LOW);
-    } else {
-      digitalWrite(RELAY, relayState = HIGH);
-    }
+    digitalWrite(RELAY, RelayIsOn() ? LOW : HIGH);
 
     // Flag that indicates the physical button hasn't been released
     SwitchReset = false;
@@ -117,7 +144,7 @@ void setup() {
   delay(10);
 
   // Switch relay off.
-  digitalWrite(RELAY, relayState = LOW);
+  digitalWrite(RELAY, LOW);
   pinMode(RELAY, OUTPUT);
 
 #ifdef DEBUG_SERIAL
@@ -134,8 +161,9 @@ void setup() {
   delay(10); // Initialasing EEPROM
   struct ratio_t ratio_from_EEPROM;
   EEPROM.get(0, ratio_from_EEPROM); // read calibration values
-  if(ratio_from_EEPROM.C > 0.66 && ratio_from_EEPROM.C < 1.5 && ratio_from_EEPROM.V > 0.66 &&
-     ratio_from_EEPROM.V < 1.5 && ratio_from_EEPROM.P > 0.5 && ratio_from_EEPROM.P < 2.0) // values look correct
+  if(ratio_from_EEPROM.C > RatioMin_VC && ratio_from_EEPROM.C < RatioMax_VC &&
+     ratio_from_EEPROM.V > RatioMin_VC && ratio_from_EEPROM.V < RatioMax_VC &&
+     ratio_from_EEPROM.P > RatioMin_P && ratio_from_EEPROM.P < RatioMax_P) // values look correct
     ratio = ratio_from_EEPROM;
 
   auto Opts = avp::StaticWebServer::DefaultOpts();
@@ -178,27 +206,34 @@ void setup() {
 #endif
 
   w.on("/on", HTTP_GET, [&]() {
-    digitalWrite(RELAY, relayState = HIGH);
+    digitalWrite(RELAY, HIGH);
     w.send(200, "text/plain", String("Relay is ON"));
   });
 
   w.on("/off", HTTP_GET, [&]() {
-    digitalWrite(RELAY, relayState = LOW);
+    digitalWrite(RELAY, LOW);
     w.send(200, "text/plain", String("Relay is OFF"));
   });
 
   w.on("/set", HTTP_GET, [&]() {
-    CheckFor("VoltageFactor", w, &ratio.V);
-    CheckFor("CurrentFactor", w, &ratio.C);
-    CheckFor("PowerFactor", w, &ratio.P);
-    w.send(200, "text/plain", String("Ratio is set to ") + ratio.V + " " + ratio.C + " " + ratio.P);
+    String reply;
+    bool changed = Nudge("VoltageFactor", &ratio.V, RatioMin_VC, RatioMax_VC, reply);
+    changed |= Nudge("CurrentFactor", &ratio.C, RatioMin_VC, RatioMax_VC, reply);
+    changed |= Nudge("PowerFactor", &ratio.P, RatioMin_P, RatioMax_P, reply);
+    if(changed) {
+      EEPROM.put(0, ratio);
+      EEPROM.commit();
+    }
+    reply += String("Ratio is now ") + ratio.V + " " + ratio.C + " " + ratio.P;
+    w.send(200, "text/plain", reply);
   });
 
   w.on("/read", HTTP_GET, [&]() {
     // Energy gets 4 decimals: at ~0.0016 Wh per meter pulse, the default 2 would sit
     // unmoved for minutes on a small load.
     w.send(200, "text/plain",
-           String(voltage) + " " + current + " " + power + " " + String(energy, 4) + " " + relayState + "\n");
+           String(voltage) + " " + current + " " + power + " " + String(energy, 4) + " " +
+             (RelayIsOn() ? "1" : "0") + "\n");
   });
 
   w.on("/energy_reset", HTTP_GET, [&]() {
@@ -216,7 +251,7 @@ void setup() {
 // hurry an update along; a plug whose load is ON waits for its own next off window,
 // or takes an espota push to plug-XXYYZZ (which lasts only until that window).
 static void CheckFleetOTA() {
-  if(relayState == LOW) avp::PullUpdateFromFleetServer(NAME, FW_VERSION);
+  if(!RelayIsOn()) avp::PullUpdateFromFleetServer(NAME, FW_VERSION);
 } // CheckFleetOTA
 
 // The BOOT row has to wait for the connection -- FleetServerDebug silently drops
