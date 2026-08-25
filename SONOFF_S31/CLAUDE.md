@@ -25,7 +25,7 @@ Every minute **while its relay is off**, a plug pulls `http://bsd:8000/firmware/
 Deploy by publishing the image, and bump `FW_VERSION` in `main.cpp` first so the running build is identifiable:
 
 ```
-scp .pio/build/espota/firmware.bin bsd:/POOL/Packages/TEMP/FIRMWARE/plug.bin
+scp D:/WORK/PLUG/build/espota/firmware.bin bsd:/POOL/Packages/TEMP/FIRMWARE/plug.bin
 ```
 
 Keep the outgoing image as `plug.bin.<version>` beside it for rollback. espota is the only way to reach a unit whose load is **on**, since it skips the fleet pull — but it is not free: the flash reboots the unit, and `setup()` forces the relay LOW and leaves it there, so the load loses power and stays off until someone sends `/on`. Treat an espota to a live-load plug as a deliberate power cut, subject to the same "no plug's load survives being switched off" rule, and re-close the relay afterwards. The flash lasts only until the relay is next switched off, when the fleet image reclaims it.
