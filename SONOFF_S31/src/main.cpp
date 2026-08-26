@@ -20,7 +20,7 @@
 #define GIT_REV "nogit" // overridden by git_rev.py extra_script at build time
 #endif
 // Human deploy counter, bumped on every upload; the single version source.
-#define FW_VERSION "6.41"
+#define FW_VERSION "6.42"
 // Web-page form, FW_VERSION with the build's commit appended. Fleet OTA is
 // MD5-gated, so both forms are informational.
 static constexpr const char *Version = FW_VERSION "+" GIT_REV;
@@ -117,6 +117,11 @@ static void ButtonCheck() {
 
   if(!SwitchState) {
     if(++NumCyclesButtonIsPressed >= ButtonReset_s * 1000 / ButtonChkPeriod_ms) {
+      // Two independent credential stores, and only the second one is ours: the SDK keeps
+      // its own copy in flash, while StaticWiFi_Conn reads LittleFS /net_auth.txt on every
+      // boot. Erasing just the SDK's left the stored credentials to come straight back --
+      // which made the button, the one recovery path that needs no network, a no-op.
+      avp::StaticWiFi_Conn::ForgetAUTH();
       WiFi.disconnect(true);
       // button was pressed long enough
       ESP.reset();
@@ -197,7 +202,6 @@ void setup() {
 
   // WiFi.setPhyMode(WIFI_PHY_MODE_11G); that's 802.11g mode, we do not do it
   
-  avp::HTML_Log::begin();
 #ifdef DEBUG // bench-only flash inventory: pure noise in the fleet log
   debug_puts("debug_puts output here!\n");
   debug_printf("Sketch size:     %u\n", ESP.getSketchSize());
