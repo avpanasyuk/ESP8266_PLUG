@@ -19,7 +19,10 @@
 #ifndef GIT_REV
 #define GIT_REV "nogit" // overridden by git_rev.py extra_script at build time
 #endif
-// Human deploy counter, bumped on every upload; the single version source.
+// The single version source, and the pull-OTA comparison key -- a collision means the
+// update will not trigger, so it must change on every upload. NOT a plain deploy
+// counter: it is a semver, and with only two components the rule lands on the second.
+// A fix increments it by one; a NEW CAPABILITY jumps it to the next multiple of ten.
 #define FW_VERSION "6.43"
 // Web-page form, FW_VERSION with the build's commit appended. Fleet OTA is
 // MD5-gated, so both forms are informational.

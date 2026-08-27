@@ -80,6 +80,17 @@ A boot is deliberately not logged as a `RELAY` row: `setup()` always opens the r
 would carry no information. Its absence carries the information instead — a `RELAY,state=1`
 followed by a `BOOT` with no `state=0` between them means that reboot cut a live load.
 
+## Versioning
+
+`FW_VERSION` in `main.cpp` is the single source, and the pull-OTA comparison key — a collision
+means the update never triggers, so it changes on every upload. It is a semver, not a deploy
+counter, and with only two components the rule lands on the second one: **a fix increments it by
+one, a new capability jumps it to the next multiple of ten.** Bump it in the commit that changes
+behaviour, not at upload time, so every build is uniquely versioned.
+
+`GIT_REV` is injected at build time and appended for display only (`6.43+eb3e0bc`); it is never
+folded into `FW_VERSION`.
+
 ## Updating a deployed unit
 
 Deploy by publishing a new `plug.bin` on the fleet server — each unit pulls it at its next
