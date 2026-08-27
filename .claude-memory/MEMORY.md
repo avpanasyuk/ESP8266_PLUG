@@ -2,3 +2,5 @@
 - [Deploy = publish plug.bin on bsd](fleet-deploy-not-espota.md) — the fleet pull reverts an espota'd relay-off plug ~10 s after it boots, so publishing is the only way to test on hardware.
 - [sprintf_static aliases debug_printf's buffer](sprintf-static-buffer-aliasing.md) — passing it into LogBoot emptied a field and duplicated the row.
 - [A legacy-named plug is invisible to the fleet](legacy-named-plug-invisible-to-fleet.md) — pre-self-naming units answer only at their compile-time NAME; POST plug.bin to their /update.
+- [Plugs run on the baked-in SSID](plugs-run-on-the-baked-in-ssid.md) — most have no stored creds, so changing secrets.ini strands them.
+- [Open-relay current is a pulse artefact](open-relay-current-is-a-pulse-artefact.md) — amps holds ~0.06 A for 30 s after each CF pulse; judge trickle by Wh over minutes.

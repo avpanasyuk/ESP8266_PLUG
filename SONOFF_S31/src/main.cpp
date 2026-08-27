@@ -20,7 +20,7 @@
 #define GIT_REV "nogit" // overridden by git_rev.py extra_script at build time
 #endif
 // Human deploy counter, bumped on every upload; the single version source.
-#define FW_VERSION "6.42"
+#define FW_VERSION "6.43"
 // Web-page form, FW_VERSION with the build's commit appended. Fleet OTA is
 // MD5-gated, so both forms are informational.
 static constexpr const char *Version = FW_VERSION "+" GIT_REV;
@@ -269,6 +269,29 @@ static void LogBootOnce() {
   avp::LogBoot(FW_VERSION, GIT_REV);
 } // LogBootOnce
 
+// Relay transitions are read off the PIN, never hooked into /on and /off. Four things move
+// that relay -- /on, /off, the hardware button, and the inherited /pin?i=12&set= -- so a
+// handler-level hook would miss half of them, and /pin exists precisely to write GPIOs
+// behind the application's back. Same reasoning that keeps RelayIsOn() reading the pin.
+//
+// The row carries the energy accumulator, which is what makes the log worth keeping: field 4
+// on the OFF row minus field 4 on the preceding ON row is that interval's consumption, with
+// no uptime arithmetic and no duty-cycle estimate. Watts is the draw at the instant of the
+// edge -- meaningful on OFF (what was cut), ~0 on ON (nothing is drawn yet), carried on both
+// so the schema is fixed and parseable.
+//
+// Boot is deliberately NOT logged: setup() always forces the relay LOW, so a row there would
+// carry no information. Its ABSENCE is the signal instead -- a RELAY,state=1 followed by a
+// BOOT with no state=0 between them means that reboot cut a live load.
+static void LogRelayEdge() {
+  static int8_t Last = -1;
+  const bool IsOn = RelayIsOn();
+  if(Last < 0) { Last = IsOn; return; } // adopt the post-setup state; BOOT already reports it
+  if(Last == (int8_t)IsOn) return;
+  Last = IsOn;
+  debug_printf("RELAY,state=%d,W=%.2f,Wh=%.4f\n", IsOn, power, energy);
+} // LogRelayEdge
+
 void loop() {
   // put your main code here, to run repeatedly:
   avp::Periodically<ButtonCheck>::Run(ButtonChkPeriod_ms);
@@ -278,5 +301,8 @@ void loop() {
   avp::Periodically<LogBootOnce>::Run(1000); // no-op after the first connected pass
   avp::Periodically<CheckFleetOTA>::Run(60UL * 1000); // fleet pull-OTA, once a minute (relay-off only)
   avp::StaticWebServer::call_in_loop();
+  // After call_in_loop(), so an /on or /off handled this pass is seen in the same pass --
+  // and after its send(), so the bsd POST never delays the caller's reply.
+  LogRelayEdge();
   yield();
 } // loop
