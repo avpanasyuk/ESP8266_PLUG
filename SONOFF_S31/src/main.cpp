@@ -19,12 +19,10 @@
 #ifndef GIT_REV
 #define GIT_REV "nogit" // overridden by git_rev.py extra_script at build time
 #endif
-// The single version source. MAJOR.MINOR.PATCH per the tree-wide standard: PATCH for a
-// fix, MINOR for a new capability, MAJOR for a breaking change (e.g. a PERSIST_SIG bump).
-// Not a deploy counter. It is sent as x-ESP8266-version and logged by the fleet server,
-// but the pull decides by MD5 -- so a collision does not block an update here, it only
-// costs a running unit the ability to say what it is. Bump it in the commit that changes
-// behaviour, not at upload time, so every build is uniquely identified.
+// The single version source. MAJOR.MINOR.PATCH per the tree-wide standard: PATCH for a fix,
+// MINOR for a new capability, MAJOR for a breaking change (e.g. a PERSIST_SIG bump). Not a
+// deploy counter, and not what triggers a fleet update (see below) -- so bump it in the commit
+// that changes behaviour, not at upload time, and every build stays uniquely identified.
 #define FW_VERSION "6.50.0"
 
 // Enforced, because a version is only worth having if its format cannot drift: a malformed

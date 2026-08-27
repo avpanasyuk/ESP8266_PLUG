@@ -95,8 +95,8 @@ by the server, but `PullUpdateFromFleetServer` decides by MD5 (`FleetServerOTA.h
 collision therefore does not block a rollout here — it only costs a running unit the ability to
 say what it is.
 
-`GIT_REV` is injected at build time and appended for display only (`6.43+eb3e0bc`); it is never
-folded into `FW_VERSION`.
+`GIT_REV` is injected at build time and appended for display only (`MAJOR.MINOR.PATCH+<short
+SHA>`); it is never folded into `FW_VERSION`.
 
 ## Updating a deployed unit
 
