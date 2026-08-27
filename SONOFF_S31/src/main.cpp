@@ -19,11 +19,30 @@
 #ifndef GIT_REV
 #define GIT_REV "nogit" // overridden by git_rev.py extra_script at build time
 #endif
-// The single version source, and the pull-OTA comparison key -- a collision means the
-// update will not trigger, so it must change on every upload. NOT a plain deploy
-// counter: it is a semver, and with only two components the rule lands on the second.
-// A fix increments it by one; a NEW CAPABILITY jumps it to the next multiple of ten.
-#define FW_VERSION "6.43"
+// The single version source. MAJOR.MINOR.PATCH per the tree-wide standard: PATCH for a
+// fix, MINOR for a new capability, MAJOR for a breaking change (e.g. a PERSIST_SIG bump).
+// Not a deploy counter. It is sent as x-ESP8266-version and logged by the fleet server,
+// but the pull decides by MD5 -- so a collision does not block an update here, it only
+// costs a running unit the ability to say what it is. Bump it in the commit that changes
+// behaviour, not at upload time, so every build is uniquely identified.
+#define FW_VERSION "6.50.0"
+
+// Enforced, because a version is only worth having if its format cannot drift: a malformed
+// FW_VERSION fails the build rather than shipping. Digits and exactly two dots, every group
+// non-empty.
+static constexpr bool IsSemver(const char *s) {
+  int dots = 0, digits = 0;
+  for(; *s != '\0'; ++s) {
+    if(*s == '.') {
+      if(digits == 0) return false;
+      ++dots;
+      digits = 0;
+    } else if(*s >= '0' && *s <= '9') ++digits;
+    else return false;
+  }
+  return dots == 2 && digits > 0;
+} // IsSemver
+static_assert(IsSemver(FW_VERSION), "FW_VERSION must be MAJOR.MINOR.PATCH -- see README");
 // Web-page form, FW_VERSION with the build's commit appended. Fleet OTA is
 // MD5-gated, so both forms are informational.
 static constexpr const char *Version = FW_VERSION "+" GIT_REV;

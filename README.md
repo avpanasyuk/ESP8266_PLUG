@@ -82,11 +82,18 @@ followed by a `BOOT` with no `state=0` between them means that reboot cut a live
 
 ## Versioning
 
-`FW_VERSION` in `main.cpp` is the single source, and the pull-OTA comparison key — a collision
-means the update never triggers, so it changes on every upload. It is a semver, not a deploy
-counter, and with only two components the rule lands on the second one: **a fix increments it by
-one, a new capability jumps it to the next multiple of ten.** Bump it in the commit that changes
-behaviour, not at upload time, so every build is uniquely versioned.
+`FW_VERSION` in `main.cpp` is the single source, and it is a semver in the tree-wide
+`MAJOR.MINOR.PATCH` form — **PATCH for a fix, MINOR for a new capability, MAJOR for a breaking
+change** such as a `PERSIST_SIG` bump. Not a deploy counter. Bump it in the commit that changes
+behaviour, not at upload time, so every build is uniquely identified.
+
+A `static_assert` on the format fails the build if it is not three numeric groups, so the shape
+cannot drift.
+
+The version is *not* what triggers a fleet update. It is sent as `x-ESP8266-version` and logged
+by the server, but `PullUpdateFromFleetServer` decides by MD5 (`FleetServerOTA.hpp`). A version
+collision therefore does not block a rollout here — it only costs a running unit the ability to
+say what it is.
 
 `GIT_REV` is injected at build time and appended for display only (`6.43+eb3e0bc`); it is never
 folded into `FW_VERSION`.
