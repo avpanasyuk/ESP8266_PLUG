@@ -19,14 +19,29 @@ voltage channel is uncalibrated.
 
 The route that works is **differential**, via HOUSE_POWER's panel meter:
 
-1. The utility bill anchors the meter's mains gain — whole-house real energy from the only
-   legally calibrated instrument on the property.
+1. **`bill_net + PV_production`** anchors the meter's mains gain — two traceable instruments, the
+   utility revenue meter and the inverter's own production meter. ⛔ **Never the bill alone.** The
+   house has a **line-side tapped** solar array (producing since 2018, ~12.9 MWh/year), connected
+   upstream of the main panel, so the panel's feeder CTs measure **gross** consumption while the
+   bill is **net**. Gross is nearly flat year-round at 1450–2150 kWh/month; billed net swings 13×
+   across the year purely from production. Anchoring on the bill alone in a spring month would put
+   the mains coefficient out by up to 8×, and the plug gain with it.
+   Measured by HOUSE_POWER over the 7 billing periods with >50 % meter coverage:
+   `EPM_mains / (bill_net + PV_production)` = **0.907**, sd 0.041 — the feeders read ~9 % low.
 2. At a plug's relay edge, whole-house power steps by that plug's load while every other load is
    unchanged across the step, so it cancels. Against an anchored mains channel that is one
-   equation in one unknown.
+   equation in one unknown. This stage is **differential and never touches an absolute total**,
+   so nothing about the solar affects it.
 
-Caveat carried by step 1: the bill anchors the *ensemble* gain over the four feeder channels, so
-per-CT variation between them stays unconstrained and lands in the residual.
+Caveat carried by step 1: it anchors the *ensemble* gain over the four feeder channels, so per-CT
+variation between them stays unconstrained and lands in the residual.
+
+⚠ The array is invisible to every test run from inside the house. A diurnal-shape argument
+(midday mains exceeding night mains in every month) appears to rule PV out and does not — a
+line-side tap gives gross consumption its normal midday-high shape and it never reverses. Nor
+does a hunt for negative feeder power: these CTs are non-directional, so export returns as
+positive watts. Both tests were run here and both came back clean on an array that had been
+running for eight years. The only evidence that settles it is the inverter's own production data.
 
 ## `log_plugs.sh` — the collector for both
 
