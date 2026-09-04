@@ -36,15 +36,19 @@ volts error, so nothing here validates or condemns `ratio.C`.
 `V·I ≈ P` holds on the plug (measured 0.994 raw on `plug-E23948` at ~720 W), but a shunt-resistance
 error scales the current register **and** the CF power pulses by the same factor, so that identity
 survives it. Only an external current or energy reference can close it. The house has none better
-than ±0.5 % ([[../../../../LAB_EQUIP]] rule 4), and the panel meter's own voltage channel is
+than ±0.5 % (`LAB_EQUIP` rule 4), and the panel meter's own voltage channel is
 uncalibrated, so it is not a witness either.
 
 **How to apply:**
 - Treat published watts as **~8 % high** and published volts as **~4 % high** until the trim is
   reverted. Read a unit's live factors with `GET /set` and no arguments.
 - Reverting is `GET /set?VoltageFactor=0.961538&CurrentFactor=0.961538&PowerFactor=0.925926`
-  (per unit; `plug-E0F847` carries 1.04/1.05/1.09, so its factors differ). **Not done yet** — it
-  changes `Ws_per_pulse` for future pulses only, putting an unmarked slope discontinuity in the Wh
-  accumulator, and HOUSE_POWER is mid-experiment differencing exactly that field. Coordinate first.
+  (per unit; `plug-E0F847` carries 1.04/1.05/1.09, so its factors differ). **Deliberately not
+  done.** The voltage leg is measured but the current leg is only inferred, so reverting all three
+  would trade a factor whose error is named for one that is not, and it would make every
+  historical reading unreconstructable — `ratio.P` changes `Ws_per_pulse` for future pulses only,
+  leaving an unmarked slope discontinuity in the Wh accumulator. Divide the factor out instead,
+  recording each unit's live value alongside the data. Revert only once the current leg has its
+  own independent measurement — see `calibration/README.md` for the route.
 - Don't re-derive any of this from the Kill-A-Watt. See [[open-relay-current-is-a-pulse-artefact]]
   for the other field that misleads.

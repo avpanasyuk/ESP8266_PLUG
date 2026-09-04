@@ -77,7 +77,8 @@ step by more than ~3× the robust scale.
 - **`daemon -r` restarts the script if it exits, and the script appends.** The header is written
   only when the file does not exist, inside its own redirected group — putting the redirect on the
   `if` truncates the file whether or not the branch runs, which silently empties the whole log on
-  every restart. That bug shipped once here; it is worth re-reading the block before editing it.
+  every restart. Re-read that block before editing it — the truncation is silent and costs the
+  whole run.
 - **A dead instrument reports a plausible constant, never an error.** UPS 2 looked frozen at
   exactly 124.0 across four samples. It is not — it quantises to 1 V and does move (124 → 120 over
   thirteen minutes). Judge that from a long run, never from a handful of samples.
