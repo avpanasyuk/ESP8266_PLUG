@@ -47,8 +47,45 @@ one recovery path that needs no network.
 Power is derived from the meter's CF pulse train rather than its power register, so it stays
 continuous down to the meter's ~0.2 W floor. Below that a plug reads zero watts *and* zero amps.
 
-Calibration: the plugs come within a couple of percent, and the calibrated defaults are compiled
-in. To trim one against a reference instrument, enter the ratio of reference to reported value in
+## What the meter actually measures
+
+Datasheet: `\\bsd\packages\DOCS\Electronics\DATASHEETS\Energy Metering\CSE7766.pdf` (Chipsea,
+Rev 1.2) — the authority for everything in this section.
+
+**Watts and Wh are ACTIVE power and active energy, power factor included.** CF is defined as the
+active-power output, and both published fields are derived from its pulse train, so they are
+directly comparable with any real-power reference regardless of the load's PF.
+
+Volts and amps are separate RMS registers with their own coefficients and their own refresh, held
+from the last frame that carried an update flag — at low load they can be seconds stale. **Their
+product is not field 3 and is not a power factor**; a burst of reads under a steady load gives
+`V*I/W` ratios scattering either side of unity, above it included, which is register staleness and
+not physics.
+
+Chip accuracy, before the trim below and before the assembled meter's own tolerance: ±1 % on power
+above 55 W, ±3 % from 55 W down to 15 W, and an absolute ±1.5 W below that; ±1 % on voltage over
+80–260 V; ±1 % on current down to 250 mA. **Below 50 mA the chip cannot measure current at all**
+and reports a no-load noise floor of ~38 mA instead — which is why every consumer gates on watts
+and never on amps.
+
+## Calibration — two layers, and only the first one is traceable
+
+The CSE7766 is calibrated at the factory against a 1 mΩ shunt and a 1 MΩ divider at 5 A / 220 V,
+and it ships those coefficients in every frame. The datasheet is explicit that this covers the
+**chip only, not the assembled meter**, so the S31's own shunt and divider tolerance is not
+calibrated out.
+
+On top of that the firmware applies per-unit multipliers `ratio.V/C/P`, persisted in EEPROM, whose
+compiled-in defaults are `{1.04, 1.04, 1.08}`. **What reference those came from is not recorded** —
+the source comment says only that two early plugs agreed. So the 8 % on power is a trim of unknown
+provenance, and it, not the chip, sets the floor on how well a plug can be trusted as an
+instrument: the chip is spec'd at ±1 % above 55 W. Anyone using a plug as a reference should
+decide deliberately whether to keep the trim or return `PowerFactor` to the chip's own number.
+
+Read a unit's live factors with `GET /set` carrying no arguments — every field is absent, nothing
+is written, and the handler still reports all three.
+
+To trim one against a reference instrument, enter the ratio of reference to reported value in
 the home page's `Current` / `Voltage` / `Power` fields; the multipliers persist in EEPROM. The
 field is a multiplier, not the value — so `1.0` is the no-op. Anything that is not a positive
 number, or that would push a factor outside the span `setup()` accepts back from EEPROM, is
