@@ -2,43 +2,67 @@
 
 The compiled-in trim `ratio = {V 1.04, C 1.04, P 1.08}` came from a Kill-A-Watt, and the
 Kill-A-Watt is the instrument in error — see `.claude-memory/calibration-trim-is-a-killawatt-artefact.md`
-for the evidence and the mechanism. This directory holds what is being done about it.
+for the evidence and the mechanism. **The trims are deliberately left in place**: a factor whose
+error can be named is worth more than a corrected number of uncertain provenance, and reverting
+would make every historical reading unreconstructable. Divide it out; do not remove it.
 
-## The two legs are in very different states
+## The two legs, and why only one of them is easy
 
-**Voltage — measurable here.** The house has independent witnesses on the same service: the two
-pollable UPS units report `input.voltage`, and five plugs report their own. Nothing needs to be
-touched physically.
+**Voltage — settled locally.** The two pollable UPS units report `input.voltage` on the same
+service. Regress a plug's volts against a UPS's volts across the day's swing: the **slope** is
+what `ratio.V` claims, and a single-point comparison could not have separated it from an offset.
 
-**Current and power — not measurable here.** A shunt-resistance error scales the current register
-and the CF power pulses by the same factor, so the plug's own `V·I ≈ P` identity survives it and
-cannot detect it. Closing this leg needs an external current or energy reference. The bench has
-nothing better than ±0.5 % (`LAB_EQUIP` rule 4), the panel meter's own voltage channel is
-uncalibrated, and the only traceable instrument on the property is the utility revenue meter.
+**Current and power — needs an outside reference.** A shunt-resistance error scales the current
+register and the CF power pulses by the same factor, so the plug's own `V·I ≈ P` identity survives
+it. The bench has nothing better than ±0.5 % (`LAB_EQUIP` rule 4) and the panel meter's own
+voltage channel is uncalibrated.
 
-## `log_line_voltage.sh` — the voltage-gain regression
+The route that works is **differential**, via HOUSE_POWER's panel meter:
 
-A single-point comparison confounds gain with offset, and the trim is a *gain* claim. Service
-voltage swings a few volts over a day as house load changes, so sampling across that swing
-separates them: regress each plug's volts against a UPS's volts, and the **slope** is the gain
-error the `ratio.V` trim purports to correct while the intercept absorbs the offset.
+1. The utility bill anchors the meter's mains gain — whole-house real energy from the only
+   legally calibrated instrument on the property.
+2. At a plug's relay edge, whole-house power steps by that plug's load while every other load is
+   unchanged across the step, so it cancels. Against an anchored mains channel that is one
+   equation in one unknown.
 
-Runs on bsd — always up, on the same service, and the only host that can reach both UPS daemons.
-Read-only; it writes no EEPROM and touches no relay.
+Caveat carried by step 1: the bill anchors the *ensemble* gain over the four feeder channels, so
+per-CT variation between them stays unconstrained and lands in the residual.
+
+## `log_plugs.sh` — the collector for both
+
+Runs on bsd: always up, on the same service, and the only host that reaches both UPS daemons.
+Read-only with respect to the fleet — no EEPROM write, no relay change.
 
 ```sh
-scp calibration/log_line_voltage.sh bsd:/POOL/WORK/PLUG/
-ssh bsd 'cd /POOL/WORK/PLUG && nohup ./log_line_voltage.sh line_voltage.csv 24 60 </dev/null >run.log 2>&1 &'
+scp calibration/log_plugs.sh bsd:/POOL/WORK/PLUG/
+ssh bsd 'cd /POOL/WORK/PLUG && daemon -r -f -p log_plugs.pid ./log_plugs.sh plug_power.csv 10 6'
 ```
 
-Arguments are the output CSV, the run length in hours, and the sample period in seconds. Output is
-one row per sample: UTC, both UPS voltages, then each plug's five `/read` fields. An unreachable
-plug contributes five empty fields rather than shifting the later columns.
+Arguments are the output CSV, the sample period in seconds, and how often to also read the UPS
+units (every *n*-th sample). One row per sample: UTC, both UPS voltages, then each plug's five
+`/read` fields. An unreachable plug contributes five empty fields rather than shifting the later
+columns.
 
-**Read the UPS columns before trusting them.** A dead instrument returns a plausible constant, not
-an error, and a UPS that reports a fixed voltage is indistinguishable from a quiet line in any
-single sample. The run is long enough to show whether each one actually moves; judge that first,
-then the regression.
+**10 s, not 60 s** — the panel meter bins at one minute, so the edge has to be located well inside
+a bin or the straddling minute must be discarded on both sides, costing a window's worth of noise
+per edge. The plugs take it comfortably: `/read` is trivial, the web server is single-connection
+so 10 s intervals never overlap, and the ~100 ms it blocks `loop()` is well inside the CSE7766's
+~500 ms UART buffer headroom.
 
-Reduce the finished CSV and commit it here beside the script — it is small, expensive to retake,
-and the whole point is to have it later.
+**The estimator is measured, not assumed** (HOUSE_POWER, on the mains' current epoch): use the
+**median** of the per-edge steps over **one minute either side**. Longer windows are monotonically
+worse — the house's own load random-walks with τ ≈ 1 min, so a wider window admits more background
+drift than it removes noise (robust scale 76 W at 1 min, 184 W at 10 min). At σ_eff = 76 W a 700 W
+step needs **N ≈ 30 edges for 2 %**; with a plain mean it would need 625, so the estimator matters
+more than the edge count. Drop edges where the mains step disagrees with the plug's own reported
+step by more than ~3× the robust scale.
+
+## Two traps in this data
+
+- **`daemon -r` restarts the script if it exits, and the script appends.** The header is written
+  only when the file does not exist, inside its own redirected group — putting the redirect on the
+  `if` truncates the file whether or not the branch runs, which silently empties the whole log on
+  every restart. That bug shipped once here; it is worth re-reading the block before editing it.
+- **A dead instrument reports a plausible constant, never an error.** UPS 2 looked frozen at
+  exactly 124.0 across four samples. It is not — it quantises to 1 V and does move (124 → 120 over
+  thirteen minutes). Judge that from a long run, never from a handful of samples.
